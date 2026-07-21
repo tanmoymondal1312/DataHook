@@ -45,25 +45,16 @@ def _ensure_initialized():
     return _enabled
 
 
-def _short_summary(endpoint, data: dict) -> str:
-    """Body text from the first two field values (in attribute order)."""
-    keys = list(
-        endpoint.attributes.order_by("order", "id").values_list("key", flat=True)
-    )
-    if not keys:
-        keys = list(data.keys())
-    parts = []
-    for key in keys[:2]:
-        if key in data and data[key] not in (None, ""):
-            parts.append(f"{key}: {data[key]}")
-    return " · ".join(parts) if parts else "New data received"
-
-
 def send_submission_notification(endpoint, submission) -> dict:
     """Push a 'new submission' notification to all of the owner's devices.
 
-    Returns a small report dict; prunes tokens FCM reports as unregistered.
-    Never raises — failures are logged and swallowed so ingest still succeeds.
+    Sent via ``messaging.send()`` (FCM HTTP v1) per device token. The data
+    payload carries the endpoint id/name and a short body so the Android client
+    can render/route the notification itself. Tokens that FCM reports as
+    invalid or unregistered are pruned from the DB.
+
+    Returns a small report dict. Never raises — failures are logged and
+    swallowed so the ingest request still succeeds.
     """
     report = {"sent": 0, "failed": 0, "pruned": 0, "enabled": False}
 
@@ -72,6 +63,7 @@ def send_submission_notification(endpoint, submission) -> dict:
     report["enabled"] = True
 
     try:
+        from firebase_admin import exceptions as fb_exceptions
         from firebase_admin import messaging
     except Exception as exc:  # pragma: no cover
         logger.warning("FCM messaging import failed: %s", exc)
@@ -81,10 +73,14 @@ def send_submission_notification(endpoint, submission) -> dict:
     if not devices:
         return report
 
-    title = f"New submission · {endpoint.name}"
-    body = _short_summary(endpoint, submission.data)
+    body_text = "New submission received"
+    # Data values must be strings for FCM. These three keys are the documented
+    # contract; submission_id/type are additive extras for the client to route
+    # to / open the specific submission.
     data_payload = {
         "endpoint_id": str(endpoint.id),
+        "endpoint_name": endpoint.name,
+        "body": body_text,
         "submission_id": str(submission.id),
         "type": "submission",
     }
@@ -93,7 +89,9 @@ def send_submission_notification(endpoint, submission) -> dict:
     for device in devices:
         message = messaging.Message(
             token=device.fcm_token,
-            notification=messaging.Notification(title=title, body=body),
+            notification=messaging.Notification(
+                title=f"New submission · {endpoint.name}", body=body_text
+            ),
             data=data_payload,
             android=messaging.AndroidConfig(priority="high"),
         )
@@ -101,6 +99,14 @@ def send_submission_notification(endpoint, submission) -> dict:
             messaging.send(message)
             report["sent"] += 1
         except messaging.UnregisteredError:
+            # Token was valid but the app/token is no longer registered.
+            stale_tokens.append(device.fcm_token)
+        except messaging.SenderIdMismatchError:
+            # Token belongs to a different Firebase sender — unusable here.
+            stale_tokens.append(device.fcm_token)
+        except fb_exceptions.InvalidArgumentError:
+            # The message payload is fixed and valid, so an INVALID_ARGUMENT
+            # here means the registration token itself is malformed/invalid.
             stale_tokens.append(device.fcm_token)
         except Exception as exc:  # pragma: no cover
             report["failed"] += 1
@@ -111,6 +117,6 @@ def send_submission_notification(endpoint, submission) -> dict:
 
         deleted, _ = Device.objects.filter(fcm_token__in=stale_tokens).delete()
         report["pruned"] = deleted
-        logger.info("Pruned %s unregistered FCM token(s).", deleted)
+        logger.info("Pruned %s invalid/unregistered FCM token(s).", deleted)
 
     return report

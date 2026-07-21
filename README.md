@@ -183,15 +183,32 @@ strings built from the endpoint's ingest URL, API key and attribute keys:
 
 ## FCM push
 
-Set `FIREBASE_CREDENTIALS` to your service-account JSON path. On a new
-submission DataHook sends:
+Set `FIREBASE_CREDENTIALS` to your service-account JSON path (keep the JSON out
+of git — point the env var at a secret file). Delivery uses `firebase-admin`'s
+`messaging.send()`, i.e. the **FCM HTTP v1** API, once per registered device
+token. On a new submission to an endpoint with `notify_on_submit=true`, DataHook
+sends to every device token of that endpoint's owner:
 
-- **title**: `New submission · {endpoint.name}`
-- **body**: first two field values
-- **data**: `{endpoint_id, submission_id, type: "submission"}`
+- **notification.title**: `New submission · {endpoint.name}`
+- **notification.body**: `New submission received`
+- **data**:
+  ```json
+  {
+    "endpoint_id": "<id>",
+    "endpoint_name": "<name>",
+    "body": "New submission received",
+    "submission_id": "<id>",
+    "type": "submission"
+  }
+  ```
+  (`endpoint_id` / `endpoint_name` / `body` are the documented contract;
+  `submission_id` / `type` are additive so the client can open the exact
+  submission.)
 
-Tokens FCM reports as unregistered are pruned automatically. If credentials are
-absent or invalid, push degrades to a no-op — the API keeps working.
+Tokens FCM reports as **invalid or unregistered** (`UnregisteredError`,
+`SenderIdMismatchError`, `InvalidArgumentError`) are pruned from the DB
+automatically. If credentials are absent or invalid, push degrades to a no-op —
+the API keeps working.
 
 ---
 

@@ -242,3 +242,15 @@ LOGGING = {
         "endpoints": {"handlers": ["console"], "level": "INFO", "propagate": False},
     },
 }
+
+
+# --------------------------------------------------------------------------- #
+# Production hardening (active only when DEBUG is off).
+# Django runs behind nginx (TLS terminated at nginx / Cloudflare origin), so we
+# teach it to trust the forwarded scheme and the HTTPS origin for CSRF.
+# --------------------------------------------------------------------------- #
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", [BASE_URL])
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
