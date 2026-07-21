@@ -1,0 +1,41 @@
+# systemd unit for DataHook (gunicorn).
+#
+# Install:
+#   sudo cp deploy/datahook.service /etc/systemd/system/datahook.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now datahook
+#   sudo systemctl status datahook
+#
+# Adjust User/Group, WorkingDirectory and paths to match your server.
+
+[Unit]
+Description=DataHook Django API (gunicorn)
+After=network.target
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/srv/datahook
+EnvironmentFile=/srv/datahook/.env
+
+# Bind to the app port nginx proxies to (see nginx-datahook.conf).
+ExecStart=/srv/datahook/venv/bin/gunicorn \
+    --workers 3 \
+    --bind 127.0.0.1:9100 \
+    --timeout 60 \
+    --access-logfile - \
+    --error-logfile - \
+    config.wsgi:application
+
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
