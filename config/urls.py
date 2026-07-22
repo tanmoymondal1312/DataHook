@@ -12,8 +12,12 @@ from django.urls import include, path
 
 from endpoints.ingest import IngestView
 
+from .legal import PrivacyPolicyView
+
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Public, unauthenticated — this URL is registered in the Play Console.
+    path("privacy/", PrivacyPolicyView.as_view(), name="privacy-policy"),
     path("api/", include("accounts.urls")),
     path("api/", include("endpoints.urls")),
     # Public ingest — deliberately outside /api/ and JWT-free.

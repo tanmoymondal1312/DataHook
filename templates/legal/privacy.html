@@ -1,0 +1,353 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy · DataHook</title>
+<meta name="description" content="How the DataHook app and API collect, use and store data.">
+<meta name="robots" content="index, follow">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --surface: #f6f7f9;
+    --border: #e3e5ea;
+    --text: #16181d;
+    --muted: #5c6270;
+    --accent: #4f46e5;
+    --accent-soft: #eef0fe;
+    --warn-bg: #fff8e6;
+    --warn-border: #f0d089;
+    --warn-text: #6b4e00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --surface: #171a20;
+      --border: #272b33;
+      --text: #e8eaee;
+      --muted: #9aa1ae;
+      --accent: #8b85ff;
+      --accent-soft: #1d1f36;
+      --warn-bg: #241f10;
+      --warn-border: #5a4a1e;
+      --warn-text: #e8d9a8;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 40px 20px 96px; }
+
+  header.masthead {
+    display: flex; align-items: center; gap: 14px;
+    padding-bottom: 28px; margin-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mark { width: 44px; height: 44px; flex: none; }
+  .masthead h1 { margin: 0; font-size: 1.5rem; letter-spacing: -0.02em; }
+  .masthead p { margin: 2px 0 0; color: var(--muted); font-size: 0.9rem; }
+
+  h2 {
+    margin: 44px 0 12px; font-size: 1.15rem; letter-spacing: -0.01em;
+    scroll-margin-top: 20px;
+  }
+  h3 { margin: 26px 0 8px; font-size: 1rem; }
+  p, li { color: var(--text); }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  strong { font-weight: 600; }
+
+  .lede {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px 20px; margin: 0 0 8px;
+  }
+  .lede p:first-child { margin-top: 0; }
+  .lede p:last-child { margin-bottom: 0; }
+
+  .toc { margin: 32px 0 0; padding: 0; list-style: none; }
+  .toc li { margin: 4px 0; }
+  .toc a { color: var(--muted); text-decoration: none; }
+  .toc a:hover { color: var(--accent); text-decoration: underline; }
+
+  .table-scroll { overflow-x: auto; margin: 16px 0; }
+  table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 0.93rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .callout {
+    background: var(--accent-soft); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 14px 16px; margin: 18px 0;
+  }
+  .callout p { margin: 0; }
+  .callout p + p { margin-top: 8px; }
+
+  .note {
+    background: var(--warn-bg); border: 1px solid var(--warn-border);
+    color: var(--warn-text);
+    border-radius: 10px; padding: 14px 16px; margin: 18px 0; font-size: 0.93rem;
+  }
+  .note p { margin: 0; color: inherit; }
+
+  code {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 5px; padding: 1px 5px;
+    font: 0.88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  footer {
+    margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.88rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <img class="mark" alt="DataHook logo"
+         src="data:image/webp;base64,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">
+    <div>
+      <h1>DataHook — Privacy Policy</h1>
+      <p>Last updated {{ updated }}</p>
+    </div>
+  </header>
+
+  <div class="lede">
+    <p><strong>DataHook</strong> is a developer tool. You create API endpoints,
+    define the fields they accept, and receive a URL that your own websites and
+    apps can post data to. You then browse those submissions in the Android app
+    and get a push notification for each new one.</p>
+    <p>This policy explains what the DataHook app and service store, why, and
+    how you can get it deleted.</p>
+  </div>
+
+  <ul class="toc">
+    <li><a href="#roles">1. Two different kinds of data</a></li>
+    <li><a href="#collect">2. What we collect</a></li>
+    <li><a href="#use">3. How it is used</a></li>
+    <li><a href="#sharing">4. Who else sees it</a></li>
+    <li><a href="#permissions">5. App permissions</a></li>
+    <li><a href="#retention">6. How long it is kept</a></li>
+    <li><a href="#data-deletion">7. Deleting your account and data</a></li>
+    <li><a href="#security">8. Security</a></li>
+    <li><a href="#children">9. Children</a></li>
+    <li><a href="#changes">10. Changes</a></li>
+    <li><a href="#contact">11. Contact</a></li>
+  </ul>
+
+  <h2 id="roles">1. Two different kinds of data</h2>
+  <p>DataHook holds two separate things, and it matters which is which:</p>
+  <ul>
+    <li><strong>Your account data</strong> — the email, name and settings you
+    give us so you can sign in and manage your endpoints. This is data we hold
+    about <em>you</em>.</li>
+    <li><strong>Your submission data</strong> — whatever your own websites,
+    forms and apps post to your ingest URLs. We store it on your behalf so you
+    can read it back. We do not decide what it contains; <strong>you do</strong>.</li>
+  </ul>
+  <div class="callout">
+    <p>Because you choose what your forms collect, <strong>you are responsible
+    for the submission data</strong> — for telling the people who fill in your
+    forms what you collect, for having a lawful basis to collect it, and for
+    your own privacy policy toward them. DataHook only stores and displays it
+    for you.</p>
+    <p>Please do not send us data you have no right to hold, and avoid posting
+    special-category data (health, financial or government identifiers) through
+    your endpoints.</p>
+  </div>
+
+  <h2 id="collect">2. What we collect</h2>
+
+  <h3>Account</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Data</th><th>Where it comes from</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Email address</td><td>You, at sign-up — or from Google if you use “Continue with Google”</td><td>Identifies your account; it is your login</td></tr>
+      <tr><td>Name</td><td>You, or your Google profile</td><td>Shown in the app</td></tr>
+      <tr><td>Password</td><td>You</td><td>Stored only as a salted hash (PBKDF2); we never see or store the password itself. Accounts created with Google have no password at all.</td></tr>
+      <tr><td>Sign-up date</td><td>Automatic</td><td>Account record-keeping</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>When you sign in with Google we receive your <strong>verified email
+  address and name</strong> from Google, and nothing else. We do not receive
+  your Google password, contacts, or any other Google data.</p>
+
+  <h3>Device</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Data</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Firebase Cloud Messaging (FCM) registration token</td><td>The address your push notifications are delivered to. Registered when you sign in, and deleted when you sign out.</td></tr>
+      <tr><td>Platform (<code>android</code>)</td><td>To route notifications correctly</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Endpoints you create</h3>
+  <p>The endpoint’s name and description, its secret API key, the field
+  definitions you set up, your notification title, and any
+  <strong>notification logo you upload</strong>.</p>
+  <div class="note">
+    <p><strong>Uploaded logos are publicly readable.</strong> They are served
+    from a public URL so that Google’s notification service can fetch and
+    display them. The filename is randomised and not listed anywhere, but
+    anyone who has the URL can open it. Do not upload anything confidential.</p>
+  </div>
+
+  <h3>Submissions</h3>
+  <p>For every submission posted to one of your endpoints we store:</p>
+  <ul>
+    <li>the <strong>data itself</strong> — exactly the fields you defined;</li>
+    <li>the <strong>IP address</strong> the submission was sent from, to help
+    you spot abuse of your endpoint;</li>
+    <li>the time it arrived.</li>
+  </ul>
+
+  <h3>What we do <em>not</em> collect</h3>
+  <p>DataHook contains <strong>no analytics, no advertising, no tracking and no
+  crash-reporting SDK</strong>. We do not collect your location, contacts,
+  calendar, photos (other than a logo you deliberately pick), device
+  identifiers for advertising, or your browsing activity. We do not sell or
+  rent any data, and we do not use your submission data to train anything.</p>
+
+  <h2 id="use">3. How it is used</h2>
+  <ul>
+    <li>To sign you in and keep you signed in.</li>
+    <li>To store your endpoints and their submissions and show them back to you.</li>
+    <li>To send you a push notification when a submission arrives — you can
+    turn this off per endpoint.</li>
+    <li>To rate-limit and protect the service from abuse.</li>
+  </ul>
+  <p>That is the whole list. We do not use it for profiling or advertising.</p>
+
+  <h2 id="sharing">4. Who else sees it</h2>
+  <p>We do not sell your data or share it with advertisers. Data passes through
+  these providers purely to make the service work:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Provider</th><th>What reaches them</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Google — Firebase Cloud Messaging</td>
+        <td>Your device token, and the contents of the notification (its title, the field values you chose to show, and the image and logo URLs)</td>
+        <td>Delivering push notifications to your phone</td>
+      </tr>
+      <tr>
+        <td>Google — Sign-In</td>
+        <td>Only if you use it: the sign-in exchange itself</td>
+        <td>Verifying who you are without a password</td>
+      </tr>
+      <tr>
+        <td>Cloudflare</td>
+        <td>Connection metadata for requests to our domain</td>
+        <td>TLS termination and blocking malicious traffic</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout">
+    <p>Notification contents travel through Google’s servers to reach your
+    device. If a field holds something sensitive, consider leaving
+    <em>“Show in notification”</em> switched off for it — the full submission
+    is still visible inside the app.</p>
+  </div>
+  <p>We may also disclose data if we are legally required to, or to protect the
+  service and its users from abuse.</p>
+
+  <h2 id="permissions">5. App permissions</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Permission</th><th>What it is for</th></tr></thead>
+    <tbody>
+      <tr><td>Internet</td><td>Talking to the DataHook API</td></tr>
+      <tr><td>Notifications</td><td>Showing the alert when a submission arrives. Declining it only stops the alerts; the app still works.</td></tr>
+      <tr><td>Photo picker</td><td>Used only when you tap “Upload logo”. Android’s system picker hands us just the one image you choose — the app has no access to the rest of your gallery.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2 id="retention">6. How long it is kept</h2>
+  <ul>
+    <li><strong>Submissions</strong> stay until you delete them, or until you
+    delete the endpoint they belong to — deleting an endpoint deletes all of
+    its submissions and fields.</li>
+    <li><strong>Account data</strong> stays while your account exists.</li>
+    <li><strong>Device tokens</strong> are removed when you sign out, and are
+    also cleared automatically once Google reports a token as no longer
+    valid.</li>
+    <li><strong>Uploaded logos</strong> are deleted when you remove or replace
+    them.</li>
+  </ul>
+
+  <h2 id="data-deletion">7. Deleting your account and data</h2>
+  <p>You can delete most things yourself, at any time, inside the app:</p>
+  <ul>
+    <li>a single submission — open your endpoint’s Submissions tab;</li>
+    <li>an entire endpoint, together with every submission and field it holds;</li>
+    <li>a notification logo;</li>
+    <li>your device’s push token — just sign out.</li>
+  </ul>
+
+  <h3>Deleting your whole account</h3>
+  <p>To have your <strong>account and everything attached to it</strong>
+  permanently deleted, email
+  <!--email_off--><a href="mailto:{{ contact_email }}?subject=DataHook%20account%20deletion%20request">{{ contact_email }}</a><!--/email_off-->
+  from the address you signed up with, asking for deletion.</p>
+  <p>We will confirm and erase your account within <strong>30 days</strong>.
+  That removes your email, name and password hash, every endpoint you created,
+  every submission stored under those endpoints, any logos you uploaded, and
+  your registered device tokens. Deletion is permanent and cannot be undone, so
+  export anything you want to keep first — the app can export any endpoint to
+  CSV or JSON.</p>
+  <p>Backups are kept for a short period for disaster recovery and are
+  overwritten on their normal cycle.</p>
+
+  <h2 id="security">8. Security</h2>
+  <ul>
+    <li>All traffic to DataHook is encrypted with HTTPS.</li>
+    <li>Passwords are stored only as salted hashes and are never recoverable.</li>
+    <li>You can only ever read your own endpoints and submissions; requests for
+    anyone else’s return “not found”.</li>
+    <li>Each endpoint has its own secret API key, which you can rotate at any
+    time from the app if you think it has leaked.</li>
+    <li>Sign-in and ingest endpoints are rate-limited.</li>
+  </ul>
+  <p>No service can promise perfect security, but we aim to hold no more than
+  the service needs.</p>
+
+  <h2 id="children">9. Children</h2>
+  <p>DataHook is a tool for developers and is not directed at children under
+  13. We do not knowingly collect data from children. If you believe a child
+  has created an account, contact us and we will remove it.</p>
+
+  <h2 id="changes">10. Changes</h2>
+  <p>If this policy changes we will update the date at the top of this page.
+  Where a change materially affects you, we will also make it visible in the
+  app.</p>
+
+  <h2 id="contact">11. Contact</h2>
+  <p>Questions about this policy, or requests about your data:
+  <!--email_off--><a href="mailto:{{ contact_email }}">{{ contact_email }}</a><!--/email_off-->.</p>
+
+  <footer>
+    <p>DataHook · <a href="{{ base_url }}">{{ base_url }}</a></p>
+    <p>This page describes how the service actually handles data. It is not
+    legal advice; if you operate in a regulated context, have it reviewed.</p>
+  </footer>
+
+</div>
+</body>
+</html>

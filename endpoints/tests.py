@@ -808,3 +808,39 @@ class VisualFlagsApiTests(APITestCase):
             reverse("submission-list", args=[self.endpoint.id])
         ).json()["results"]
         self.assertEqual(results[0]["header_image"], "https://example.com/x.jpg")
+
+
+class PrivacyPolicyPageTests(TestCase):
+    """/privacy/ is the URL registered in the Play Console — it must not break."""
+
+    def test_page_is_public_and_renders(self):
+        r = self.client.get(reverse("privacy-policy"))
+        self.assertEqual(r.status_code, 200)
+        body = r.content.decode()
+        self.assertIn("Privacy Policy", body)
+        self.assertIn(settings.PRIVACY_CONTACT_EMAIL, body)
+
+    def test_has_a_linkable_data_deletion_section(self):
+        """Play asks for a URL that explains deletion; we point at this anchor."""
+        body = self.client.get(reverse("privacy-policy")).content.decode()
+        self.assertIn('id="data-deletion"', body)
+
+    def test_no_unrendered_template_variables(self):
+        body = self.client.get(reverse("privacy-policy")).content.decode()
+        self.assertNotIn("{{", body)
+        self.assertNotIn("TODO", body)
+
+
+class PrivacyContactVisibilityTests(TestCase):
+    """The contact address must survive Cloudflare's email obfuscation.
+
+    Cloudflare rewrites bare `mailto:` links into a JS-decoded placeholder that
+    reads "[email protected]" without JavaScript — useless to a Play reviewer.
+    `<!--email_off-->` is the documented opt-out and must wrap every address.
+    """
+
+    def test_every_mailto_is_wrapped_in_an_email_off_marker(self):
+        body = self.client.get(reverse("privacy-policy")).content.decode()
+        self.assertEqual(body.count("<!--email_off-->"), body.count("<!--/email_off-->"))
+        self.assertEqual(body.count("mailto:"), body.count("<!--email_off-->"))
+        self.assertGreater(body.count("mailto:"), 0)

@@ -90,7 +90,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -253,6 +253,15 @@ FIREBASE_CREDENTIALS = os.getenv("FIREBASE_CREDENTIALS", "")
 # this as its audience, and `/api/auth/google/` verifies it against this value.
 # Leave blank to disable Google sign-in (the endpoint then returns 400).
 GOOGLE_WEB_CLIENT_ID = os.getenv("GOOGLE_WEB_CLIENT_ID", "")
+
+
+# --------------------------------------------------------------------------- #
+# Legal pages
+# --------------------------------------------------------------------------- #
+# Shown on /privacy/, which is the URL given to the Play Console. Bump the date
+# whenever the policy's substance changes.
+PRIVACY_CONTACT_EMAIL = os.getenv("PRIVACY_CONTACT_EMAIL", "tanmoymondal1315@gmail.com")
+PRIVACY_POLICY_UPDATED = os.getenv("PRIVACY_POLICY_UPDATED", "22 July 2026")
 
 
 # --------------------------------------------------------------------------- #

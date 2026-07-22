@@ -296,7 +296,8 @@ curl -s "$BASE/api/endpoints/1/stats/"  -H "Authorization: Bearer $ACCESS"
 ## 12. Backend layout & ops (for a backend agent)
 
 ```
-config/      settings (.env-driven), urls, exceptions (error envelope), middleware (ingest CORS)
+config/      settings (.env-driven), urls, exceptions (error envelope),
+             middleware (ingest CORS), legal.py (public /privacy/ page)
 accounts/    custom email User + manager, Device, auth/device API
 endpoints/   Endpoint/Attribute/Submission models, admin API, public ingest,
              validators, snippets, fcm.py, seed_demo command, tests.py (22 tests)
@@ -313,7 +314,17 @@ deploy/      systemd unit + nginx server block
 - **Media:** logos live under `MEDIA_ROOT/endpoint-logos/` and are served by
   nginx at `/media/` (see `deploy/nginx-datahook.conf`). Needs Pillow.
   Back this directory up alongside the database.
-- Run tests: `./venv/bin/python manage.py test` (70 tests). Throttling is
+- Run tests: `./venv/bin/python manage.py test` (74 tests).
+- **Public legal page:** `GET /privacy/` (no auth) renders
+  `templates/legal/privacy.html`. This exact URL is registered in the Play
+  Console, so it must never require auth or 404. Contact address and date come
+  from `PRIVACY_CONTACT_EMAIL` / `PRIVACY_POLICY_UPDATED`.
+  Every `mailto:` on it is wrapped in `<!--email_off-->` — Cloudflare's email
+  obfuscation otherwise rewrites the address into a JS-only placeholder that
+  reads "[email protected]" to a reviewer. A test enforces this.
+- **Play Store gap:** there is still **no account-deletion endpoint**. Google
+  requires both an in-app path and a web URL; the policy currently documents an
+  email request as the mechanism. Throttling is
   auto-disabled under `manage.py test` (`settings.TESTING`) — the rate-limit
   counters are cache-backed and would otherwise leak between test cases.
 - **Prod deploy of a change:** `scp` the file(s) to `/home/tanmoy/apps/datahook/…`
