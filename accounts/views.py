@@ -1,7 +1,8 @@
 """Auth, current-user and device-registration API views."""
 
 from rest_framework import status
-from rest_framework.generics import RetrieveAPIView
+from django.db import transaction
+from rest_framework.generics import RetrieveDestroyAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -67,12 +68,38 @@ class GoogleAuthView(APIView):
         )
 
 
-class MeView(RetrieveAPIView):
+class MeView(RetrieveDestroyAPIView):
+    """`GET` the signed-in user, or `DELETE` to erase the account for good.
+
+    Google Play requires an in-app account-deletion path for any app that lets
+    users create an account, so this is a hard requirement, not a nicety.
+
+    DELETE removes the user and — by cascade — every endpoint they own, all of
+    those endpoints' attributes and submissions, and their registered devices.
+    Uploaded logos are deleted from disk first: a `FileField` leaves its file
+    behind when the row goes, which would orphan the image forever *and* leave
+    it publicly readable under `/media/`.
+    """
+
     permission_classes = [IsAuthenticated]
     serializer_class = UserSerializer
 
     def get_object(self):
         return self.request.user
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        # Imported here rather than at module scope to keep `accounts` free of
+        # a hard dependency on `endpoints`.
+        from endpoints.models import Endpoint
+
+        for endpoint in Endpoint.objects.filter(owner=instance).exclude(
+            notify_logo=""
+        ):
+            if endpoint.notify_logo:
+                endpoint.notify_logo.delete(save=False)
+
+        instance.delete()
 
 
 class DeviceView(APIView):

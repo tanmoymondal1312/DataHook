@@ -50,6 +50,7 @@ Two audiences of the API:
 | POST | `/api/auth/google/` | `{id_token}` | `200`/`201 {user, created, access, refresh}` |
 | POST | `/api/auth/refresh/` | `{refresh}` | `200 {access}` |
 | GET | `/api/auth/me/` | — | `200 {id, email, name, date_joined}` |
+| DELETE | `/api/auth/me/` | — | `204` — **permanently deletes the account** |
 
 `password` min length 8. Duplicate email → `400`. Bad credentials → `400`.
 
@@ -314,7 +315,12 @@ deploy/      systemd unit + nginx server block
 - **Media:** logos live under `MEDIA_ROOT/endpoint-logos/` and are served by
   nginx at `/media/` (see `deploy/nginx-datahook.conf`). Needs Pillow.
   Back this directory up alongside the database.
-- Run tests: `./venv/bin/python manage.py test` (74 tests).
+  `/media/` sends **`Cache-Control: no-store`** deliberately: Cloudflare
+  overrides an origin `max-age` with its own Browser Cache TTL (4h), which left
+  a *deleted* logo fetchable from the edge long after it was gone from disk.
+  `no-store` is honoured (`cf-cache-status: BYPASS`), so deletion is immediate
+  everywhere. Don't "optimise" this back to `expires`.
+- Run tests: `./venv/bin/python manage.py test` (84 tests).
 - **Public legal page:** `GET /privacy/` (no auth) renders
   `templates/legal/privacy.html`. This exact URL is registered in the Play
   Console, so it must never require auth or 404. Contact address and date come
@@ -322,9 +328,12 @@ deploy/      systemd unit + nginx server block
   Every `mailto:` on it is wrapped in `<!--email_off-->` — Cloudflare's email
   obfuscation otherwise rewrites the address into a JS-only placeholder that
   reads "[email protected]" to a reviewer. A test enforces this.
-- **Play Store gap:** there is still **no account-deletion endpoint**. Google
-  requires both an in-app path and a web URL; the policy currently documents an
-  email request as the mechanism. Throttling is
+- **Account deletion:** `DELETE /api/auth/me/` erases the user and cascades to
+  their endpoints, attributes, submissions and devices. Uploaded logos are
+  deleted from disk **first** — a `FileField` leaves its file behind when the
+  row goes, which would orphan a publicly-readable image under `/media/`.
+  Reachable in the app from Settings → Delete account (type-to-confirm).
+  This exists because Google Play requires an in-app deletion path. Throttling is
   auto-disabled under `manage.py test` (`settings.TESTING`) — the rate-limit
   counters are cache-backed and would otherwise leak between test cases.
 - **Prod deploy of a change:** `scp` the file(s) to `/home/tanmoy/apps/datahook/…`

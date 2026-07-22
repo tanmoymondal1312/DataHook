@@ -844,3 +844,18 @@ class PrivacyContactVisibilityTests(TestCase):
         self.assertEqual(body.count("<!--email_off-->"), body.count("<!--/email_off-->"))
         self.assertEqual(body.count("mailto:"), body.count("<!--email_off-->"))
         self.assertGreater(body.count("mailto:"), 0)
+
+
+class PrivacyDeletionSectionTests(TestCase):
+    """The policy must describe the in-app deletion path Play requires."""
+
+    def test_documents_both_deletion_routes(self):
+        body = self.client.get(reverse("privacy-policy")).content.decode()
+        self.assertIn("In the app:", body)
+        self.assertIn("Delete account", body)
+        self.assertIn("Or by email:", body)
+
+    def test_no_duplicated_or_dangling_sentences(self):
+        body = self.client.get(reverse("privacy-policy")).content.decode()
+        self.assertEqual(body.count("from the address you signed up with"), 1)
+        self.assertNotIn(",.", body)
