@@ -1,9 +1,11 @@
 """Tests for the ingest pipeline, endpoint API and ownership isolation."""
 
 from django.contrib.auth import get_user_model
+from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
+from .fcm import NOTIFICATION_BODY_MAX, build_notification
 from .models import Attribute, Endpoint, Submission
 
 User = get_user_model()
@@ -295,3 +297,201 @@ class AuthTests(APITestCase):
             format="json",
         )
         self.assertEqual(r.status_code, 400)
+
+
+class NotificationContentTests(TestCase):
+    """`build_notification` — the title/body shown for a new submission."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="notify@example.com", password="pw12345678"
+        )
+        self.endpoint = Endpoint.objects.create(owner=self.user, name="Contact Form")
+        self.name_attr = Attribute.objects.create(
+            endpoint=self.endpoint, label="Full Name", key="name",
+            type="text", order=0,
+        )
+        self.email_attr = Attribute.objects.create(
+            endpoint=self.endpoint, label="Email", key="email",
+            type="email", order=1,
+        )
+
+    def make_submission(self, **data):
+        return Submission.objects.create(endpoint=self.endpoint, data=data)
+
+    # --- title ------------------------------------------------------------ #
+
+    def test_title_defaults_to_the_endpoint_name(self):
+        title, _ = build_notification(self.endpoint, self.make_submission(name="Ada"))
+        self.assertEqual(title, "New submission · Contact Form")
+
+    def test_custom_title_is_used_when_set(self):
+        self.endpoint.notify_title = "🎉 New lead!"
+        title, _ = build_notification(self.endpoint, self.make_submission(name="Ada"))
+        self.assertEqual(title, "🎉 New lead!")
+
+    def test_blank_custom_title_falls_back_to_the_default(self):
+        self.endpoint.notify_title = "   "
+        title, _ = build_notification(self.endpoint, self.make_submission(name="Ada"))
+        self.assertEqual(title, "New submission · Contact Form")
+
+    # --- body ------------------------------------------------------------- #
+
+    def test_body_is_generic_when_no_attribute_is_selected(self):
+        _, body = build_notification(
+            self.endpoint, self.make_submission(name="Ada", email="ada@example.com")
+        )
+        self.assertEqual(body, "New submission received")
+
+    def test_body_shows_only_the_selected_attributes(self):
+        self.name_attr.show_in_notification = True
+        self.name_attr.save(update_fields=["show_in_notification"])
+
+        _, body = build_notification(
+            self.endpoint, self.make_submission(name="Ada", email="ada@example.com")
+        )
+        self.assertEqual(body, "Full Name: Ada")
+
+    def test_multiple_selected_attributes_follow_attribute_order(self):
+        # Flip `order` so the email field comes first.
+        self.email_attr.order = 0
+        self.email_attr.show_in_notification = True
+        self.email_attr.save(update_fields=["order", "show_in_notification"])
+        self.name_attr.order = 1
+        self.name_attr.show_in_notification = True
+        self.name_attr.save(update_fields=["order", "show_in_notification"])
+
+        _, body = build_notification(
+            self.endpoint, self.make_submission(name="Ada", email="ada@example.com")
+        )
+        self.assertEqual(body, "Email: ada@example.com · Full Name: Ada")
+
+    def test_missing_and_empty_values_are_skipped(self):
+        for attr in (self.name_attr, self.email_attr):
+            attr.show_in_notification = True
+            attr.save(update_fields=["show_in_notification"])
+
+        # `email` submitted blank, `name` present.
+        _, body = build_notification(
+            self.endpoint, self.make_submission(name="Ada", email="   ")
+        )
+        self.assertEqual(body, "Full Name: Ada")
+
+        # Neither usable -> generic fallback, never an empty notification.
+        _, body = build_notification(self.endpoint, self.make_submission(email=""))
+        self.assertEqual(body, "New submission received")
+
+    def test_booleans_render_as_yes_no(self):
+        flag = Attribute.objects.create(
+            endpoint=self.endpoint, label="Subscribed", key="subscribed",
+            type="boolean", order=2, show_in_notification=True,
+        )
+        _, body = build_notification(self.endpoint, self.make_submission(subscribed=True))
+        self.assertEqual(body, "Subscribed: Yes")
+
+        _, body = build_notification(self.endpoint, self.make_submission(subscribed=False))
+        self.assertEqual(body, "Subscribed: No")
+        self.assertTrue(flag.show_in_notification)
+
+    def test_long_bodies_are_truncated(self):
+        self.name_attr.show_in_notification = True
+        self.name_attr.save(update_fields=["show_in_notification"])
+
+        _, body = build_notification(self.endpoint, self.make_submission(name="x" * 500))
+        self.assertLessEqual(len(body), NOTIFICATION_BODY_MAX)
+        self.assertTrue(body.endswith("…"))
+
+
+class NotificationSettingsApiTests(APITestCase):
+    """The notification fields must survive a round-trip through the API.
+
+    `build_notification` can be perfectly correct while the serializers never
+    expose or accept these fields — that gap is invisible to the unit tests
+    above, so it is covered explicitly here.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="pw12345678"
+        )
+        r = self.client.post(
+            reverse("login"),
+            {"email": self.user.email, "password": "pw12345678"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
+        self.endpoint = Endpoint.objects.create(owner=self.user, name="Contact Form")
+
+    def test_detail_and_list_expose_notify_title(self):
+        detail = self.client.get(
+            reverse("endpoint-detail", args=[self.endpoint.id])
+        ).json()
+        self.assertIn("notify_title", detail)
+        self.assertEqual(detail["notify_title"], "")
+
+        listed = self.client.get(reverse("endpoint-list")).json()
+        self.assertIn("notify_title", listed[0])
+
+    def test_patch_sets_and_clears_notify_title(self):
+        url = reverse("endpoint-detail", args=[self.endpoint.id])
+
+        r = self.client.patch(url, {"notify_title": "New lead!"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["notify_title"], "New lead!")
+        self.endpoint.refresh_from_db()
+        self.assertEqual(self.endpoint.notify_title, "New lead!")
+
+        r = self.client.patch(url, {"notify_title": ""}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["notify_title"], "")
+
+    def test_notify_title_is_length_limited(self):
+        r = self.client.patch(
+            reverse("endpoint-detail", args=[self.endpoint.id]),
+            {"notify_title": "x" * 101},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_attribute_show_in_notification_round_trips(self):
+        list_url = reverse("attribute-list", args=[self.endpoint.id])
+
+        r = self.client.post(
+            list_url,
+            {
+                "label": "Full Name", "key": "name", "type": "text",
+                "required": True, "order": 0, "show_in_notification": True,
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201)
+        self.assertTrue(r.json()["show_in_notification"])
+        attribute_id = r.json()["id"]
+
+        # Present on read...
+        listed = self.client.get(list_url).json()
+        self.assertTrue(listed[0]["show_in_notification"])
+
+        # ...and on the endpoint detail's nested attributes.
+        detail = self.client.get(
+            reverse("endpoint-detail", args=[self.endpoint.id])
+        ).json()
+        self.assertTrue(detail["attributes"][0]["show_in_notification"])
+
+        # ...and togglable.
+        r = self.client.patch(
+            reverse("attribute-detail", args=[self.endpoint.id, attribute_id]),
+            {"show_in_notification": False},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.json()["show_in_notification"])
+
+    def test_attribute_defaults_to_not_shown(self):
+        r = self.client.post(
+            reverse("attribute-list", args=[self.endpoint.id]),
+            {"label": "Email", "key": "email", "type": "email", "required": False},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201)
+        self.assertFalse(r.json()["show_in_notification"])

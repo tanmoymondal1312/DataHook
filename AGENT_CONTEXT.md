@@ -69,8 +69,10 @@ or `GOOGLE_WEB_CLIENT_ID` unset (feature off — password login unaffected).
 ## 4. Data model & field types
 
 - **Endpoint**: `name`, auto `slug` (`name`+random), secret `api_key` (40 chars),
-  `description`, `notify_on_submit` (bool, default true), `ingest_url`.
-- **Attribute** (per endpoint): `label`, `key`, `type`, `required`, `order`.
+  `description`, `notify_on_submit` (bool, default true), `notify_title`
+  (custom push title, max 100 chars, blank = default), `ingest_url`.
+- **Attribute** (per endpoint): `label`, `key`, `type`, `required`, `order`,
+  `show_in_notification` (bool, default false — drives the push body).
   - `key` = strict slug: `^[a-z_][a-z0-9_]*$` (lowercase/digits/underscore, no
     spaces), **unique per endpoint**. This is the JSON key developers POST.
   - `type` ∈ `text | email | number | phone | date | boolean`.
@@ -99,22 +101,22 @@ Users only ever see/modify **their own** resources (`404` otherwise).
 | GET | `/api/endpoints/` | plain array; items include `submission_count`, `attribute_count`, `ingest_url` |
 | POST | `/api/endpoints/` | `{name, description?}` → `201` full detail |
 | GET | `/api/endpoints/{id}/` | detail: `{…, api_key, ingest_url, attributes[], snippets{}, submission_count, attribute_count}` |
-| PATCH | `/api/endpoints/{id}/` | `{name?, description?, notify_on_submit?}` |
+| PATCH | `/api/endpoints/{id}/` | `{name?, description?, notify_on_submit?, notify_title?}` |
 | DELETE | `/api/endpoints/{id}/` | `204` |
 | POST | `/api/endpoints/{id}/rotate-key/` | `200 {api_key}` (regenerates) |
 
 **Endpoint list item shape:** `{id, name, slug, description, notify_on_submit,
-ingest_url, submission_count, attribute_count, created_at}`.
+notify_title, ingest_url, submission_count, attribute_count, created_at}`.
 
 ### Attributes (nested)
 | Method | Path | Body |
 |---|---|---|
 | GET | `/api/endpoints/{id}/attributes/` | plain array |
-| POST | `/api/endpoints/{id}/attributes/` | `{label, key, type, required, order?}` → `201`; invalid/dup key → `400` |
+| POST | `/api/endpoints/{id}/attributes/` | `{label, key, type, required, order?, show_in_notification?}` → `201`; invalid/dup key → `400` |
 | PATCH | `/api/endpoints/{id}/attributes/{aid}/` | partial |
 | DELETE | `/api/endpoints/{id}/attributes/{aid}/` | `204` |
 
-**Attribute shape:** `{id, label, key, type, required, order}`.
+**Attribute shape:** `{id, label, key, type, required, order, show_in_notification}`.
 
 ### Submissions (nested)
 | Method | Path | Notes |
@@ -162,8 +164,15 @@ On a new submission to an endpoint with `notify_on_submit=true`, the backend
 sends (via `messaging.send()`, FCM HTTP v1) to **every device token** of the
 endpoint owner:
 
-- **notification.title:** `New submission · {endpoint.name}`
-- **notification.body:** `New submission received`
+Title and body are built by `fcm.build_notification(endpoint, submission)`:
+
+- **title** — `endpoint.notify_title` when set, else `New submission · {name}`.
+- **body** — the values of the attributes flagged `show_in_notification`, in
+  attribute order, as `Label: value` joined by ` · `. Keys the caller omitted or
+  sent empty are skipped; booleans render as `Yes`/`No`; the result is truncated
+  to 240 chars with an ellipsis. When no attribute is selected (or nothing
+  usable was submitted) the body falls back to `New submission received` — which
+  is exactly the pre-feature behaviour, so existing endpoints are unaffected.
 - **data** (all values are strings):
   ```json
   {
@@ -171,7 +180,9 @@ endpoint owner:
     "endpoint_id": "<id>",
     "endpoint_name": "<name>",
     "submission_id": "<id>",
-    "submission_json": "{\"id\":.., \"data\":{...}, \"created_at\":\"..\"}"
+    "submission_json": "{\"id\":.., \"data\":{...}, \"created_at\":\"..\"}",
+    "title": "<same as notification.title>",
+    "body":  "<same as notification.body>"
   }
   ```
 
@@ -270,7 +281,7 @@ deploy/      systemd unit + nginx server block
   `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, throttle rates,
   `GOOGLE_WEB_CLIENT_ID` (OAuth **Web** client ID, `client_type: 3` in the
   Android app's `google-services.json`).
-- Run tests: `./venv/bin/python manage.py test` (33 tests). Throttling is
+- Run tests: `./venv/bin/python manage.py test` (42 tests). Throttling is
   auto-disabled under `manage.py test` (`settings.TESTING`) — the rate-limit
   counters are cache-backed and would otherwise leak between test cases.
 - **Prod deploy of a change:** `scp` the file(s) to `/home/tanmoy/apps/datahook/…`

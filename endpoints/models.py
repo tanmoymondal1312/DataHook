@@ -35,6 +35,15 @@ class Endpoint(models.Model):
     api_key = models.CharField(max_length=40, unique=True, default=generate_api_key)
     description = models.TextField(blank=True, default="")
     notify_on_submit = models.BooleanField(default=True)
+    notify_title = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text=(
+            "Custom push-notification title. Blank falls back to "
+            "'New submission · <endpoint name>'."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -87,6 +96,13 @@ class Attribute(models.Model):
     type = models.CharField(max_length=16, choices=Type.choices, default=Type.TEXT)
     required = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
+    show_in_notification = models.BooleanField(
+        default=False,
+        help_text=(
+            "Include this field's value in the push-notification body. "
+            "When no attribute is selected the body stays generic."
+        ),
+    )
 
     class Meta:
         ordering = ["order", "id"]

@@ -10,7 +10,10 @@ from .validators import validate_attribute_key
 class AttributeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Attribute
-        fields = ["id", "label", "key", "type", "required", "order"]
+        fields = [
+            "id", "label", "key", "type", "required", "order",
+            "show_in_notification",
+        ]
 
     def validate_key(self, value):
         value = (value or "").strip()
@@ -53,6 +56,7 @@ class EndpointListSerializer(serializers.ModelSerializer):
             "slug",
             "description",
             "notify_on_submit",
+            "notify_title",
             "ingest_url",
             "submission_count",
             "attribute_count",
@@ -65,7 +69,9 @@ class EndpointWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Endpoint
-        fields = ["id", "name", "description", "notify_on_submit"]
+        fields = [
+            "id", "name", "description", "notify_on_submit", "notify_title",
+        ]
 
     def validate_name(self, value):
         value = value.strip()
@@ -91,6 +97,7 @@ class EndpointDetailSerializer(serializers.ModelSerializer):
             "slug",
             "description",
             "notify_on_submit",
+            "notify_title",
             "api_key",
             "ingest_url",
             "attributes",

@@ -46,6 +46,57 @@ def _ensure_initialized():
     return _enabled
 
 
+# Notification bodies are truncated well before FCM's limit — the shade only
+# shows a couple of lines anyway, and the full record travels in the data payload.
+NOTIFICATION_BODY_MAX = 240
+
+GENERIC_BODY = "New submission received"
+
+
+def _display_value(value) -> str:
+    """Render a submitted value the way a human would read it in a notification."""
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    return str(value)
+
+
+def build_notification(endpoint, submission) -> tuple[str, str]:
+    """Return the ``(title, body)`` to show for ``submission``.
+
+    Title: the endpoint's ``notify_title`` when set, else the default
+    ``New submission · <name>``.
+
+    Body: the values of the attributes flagged ``show_in_notification``, in
+    attribute order, as ``Label: value`` joined by ``·``. Fields the caller
+    omitted or left empty are skipped, so a notification never shows blanks.
+    When nothing is selected (or nothing usable was submitted) the body falls
+    back to the generic line — the previous behaviour.
+    """
+    title = (endpoint.notify_title or "").strip() or f"New submission · {endpoint.name}"
+
+    data = submission.data if isinstance(submission.data, dict) else {}
+    selected = endpoint.attributes.filter(show_in_notification=True).order_by(
+        "order", "id"
+    )
+
+    parts = []
+    for attribute in selected:
+        if attribute.key not in data:
+            continue
+        value = data[attribute.key]
+        if value is None:
+            continue
+        text = _display_value(value).strip()
+        if not text:
+            continue
+        parts.append(f"{attribute.label}: {text}")
+
+    body = " · ".join(parts) if parts else GENERIC_BODY
+    if len(body) > NOTIFICATION_BODY_MAX:
+        body = body[: NOTIFICATION_BODY_MAX - 1].rstrip() + "…"
+    return title, body
+
+
 def send_submission_notification(endpoint, submission) -> dict:
     """Push a 'new submission' notification to all of the owner's devices.
 
@@ -74,7 +125,7 @@ def send_submission_notification(endpoint, submission) -> dict:
     if not devices:
         return report
 
-    body_text = "New submission received"
+    title_text, body_text = build_notification(endpoint, submission)
     # Data values must be strings for FCM. `submission_json` embeds the whole
     # submission so tapping the notification opens it with no extra fetch.
     # (FCM caps the total data payload at ~4KB; very large submissions may
@@ -92,15 +143,17 @@ def send_submission_notification(endpoint, submission) -> dict:
         "endpoint_name": endpoint.name,
         "submission_id": str(submission.id),
         "submission_json": submission_json,
+        # The client renders from these so a foreground notification looks
+        # identical to the tray one the system builds from `notification`.
+        "title": title_text,
+        "body": body_text,
     }
 
     stale_tokens = []
     for device in devices:
         message = messaging.Message(
             token=device.fcm_token,
-            notification=messaging.Notification(
-                title=f"New submission · {endpoint.name}", body=body_text
-            ),
+            notification=messaging.Notification(title=title_text, body=body_text),
             data=data_payload,
             android=messaging.AndroidConfig(priority="high"),
         )
