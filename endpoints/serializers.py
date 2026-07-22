@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import Attribute, Endpoint, Submission
+from .models import Attribute, Endpoint, Submission, header_image_for
 from .snippets import build_snippets
 from .validators import validate_attribute_key
 
@@ -12,7 +12,7 @@ class AttributeSerializer(serializers.ModelSerializer):
         model = Attribute
         fields = [
             "id", "label", "key", "type", "required", "order",
-            "show_in_notification",
+            "show_in_notification", "show_as_subtitle", "show_as_data_header",
         ]
 
     def validate_key(self, value):
@@ -47,6 +47,7 @@ class EndpointListSerializer(serializers.ModelSerializer):
     submission_count = serializers.IntegerField(read_only=True)
     attribute_count = serializers.IntegerField(read_only=True)
     ingest_url = serializers.CharField(read_only=True)
+    notify_logo_url = serializers.CharField(read_only=True)
 
     class Meta:
         model = Endpoint
@@ -57,6 +58,7 @@ class EndpointListSerializer(serializers.ModelSerializer):
             "description",
             "notify_on_submit",
             "notify_title",
+            "notify_logo_url",
             "ingest_url",
             "submission_count",
             "attribute_count",
@@ -85,6 +87,7 @@ class EndpointDetailSerializer(serializers.ModelSerializer):
 
     attributes = AttributeSerializer(many=True, read_only=True)
     ingest_url = serializers.CharField(read_only=True)
+    notify_logo_url = serializers.CharField(read_only=True)
     snippets = serializers.SerializerMethodField()
     submission_count = serializers.SerializerMethodField()
     attribute_count = serializers.SerializerMethodField()
@@ -98,6 +101,7 @@ class EndpointDetailSerializer(serializers.ModelSerializer):
             "description",
             "notify_on_submit",
             "notify_title",
+            "notify_logo_url",
             "api_key",
             "ingest_url",
             "attributes",
@@ -119,10 +123,15 @@ class EndpointDetailSerializer(serializers.ModelSerializer):
 
 
 class SubmissionSerializer(serializers.ModelSerializer):
+    header_image = serializers.SerializerMethodField()
+
     class Meta:
         model = Submission
-        fields = ["id", "data", "source_ip", "created_at"]
+        fields = ["id", "data", "header_image", "source_ip", "created_at"]
         read_only_fields = fields
+
+    def get_header_image(self, obj):
+        return header_image_for(obj.endpoint, obj.data)
 
 
 class AggregateSubmissionSerializer(serializers.ModelSerializer):
@@ -130,8 +139,15 @@ class AggregateSubmissionSerializer(serializers.ModelSerializer):
 
     endpoint_id = serializers.IntegerField(source="endpoint.id", read_only=True)
     endpoint_name = serializers.CharField(source="endpoint.name", read_only=True)
+    header_image = serializers.SerializerMethodField()
 
     class Meta:
         model = Submission
-        fields = ["id", "endpoint_id", "endpoint_name", "data", "created_at"]
+        fields = [
+            "id", "endpoint_id", "endpoint_name", "data", "header_image",
+            "created_at",
+        ]
         read_only_fields = fields
+
+    def get_header_image(self, obj):
+        return header_image_for(obj.endpoint, obj.data)

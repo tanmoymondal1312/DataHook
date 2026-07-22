@@ -44,6 +44,15 @@ class Endpoint(models.Model):
             "'New submission · <endpoint name>'."
         ),
     )
+    notify_logo = models.ImageField(
+        upload_to="endpoint-logos/",
+        blank=True,
+        null=True,
+        help_text=(
+            "Optional logo shown as the notification's large icon. Uploaded "
+            "via POST /api/endpoints/{id}/logo/."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -51,6 +60,19 @@ class Endpoint(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.slug})"
+
+    @property
+    def notify_logo_url(self) -> str:
+        """Absolute URL of the logo, or "" when none is set.
+
+        Absolute because both FCM and the Android client fetch it directly —
+        a relative /media/… path would be useless to them.
+        """
+        if not self.notify_logo:
+            return ""
+        from django.conf import settings
+
+        return f"{settings.BASE_URL}{self.notify_logo.url}"
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -87,6 +109,7 @@ class Attribute(models.Model):
         PHONE = "phone", "Phone"
         DATE = "date", "Date"
         BOOLEAN = "boolean", "Boolean"
+        IMAGE = "image", "Image URL"
 
     endpoint = models.ForeignKey(
         Endpoint, on_delete=models.CASCADE, related_name="attributes"
@@ -100,7 +123,23 @@ class Attribute(models.Model):
         default=False,
         help_text=(
             "Include this field's value in the push-notification body. "
-            "When no attribute is selected the body stays generic."
+            "When no attribute is selected the body stays generic. For an "
+            "`image` attribute this instead supplies the notification's picture."
+        ),
+    )
+    show_as_subtitle = models.BooleanField(
+        default=False,
+        help_text=(
+            "Use this field's value as the notification subtitle. At most one "
+            "attribute per endpoint may be the subtitle — setting it here "
+            "clears the flag on the endpoint's other attributes."
+        ),
+    )
+    show_as_data_header = models.BooleanField(
+        default=False,
+        help_text=(
+            "For an `image` attribute: show it as the submission's header "
+            "image throughout the app (detail banner, list thumbnails)."
         ),
     )
 
@@ -114,6 +153,32 @@ class Attribute(models.Model):
 
     def __str__(self):
         return f"{self.endpoint.slug}:{self.key} ({self.type})"
+
+    # Flags that name a single winner per endpoint: the newest one set wins and
+    # the others are cleared, so the app never has to resolve a tie.
+    _EXCLUSIVE_FLAGS = ("show_as_subtitle", "show_as_data_header")
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        for flag in self._EXCLUSIVE_FLAGS:
+            if getattr(self, flag):
+                Attribute.objects.filter(
+                    endpoint_id=self.endpoint_id, **{flag: True}
+                ).exclude(pk=self.pk).update(**{flag: False})
+
+
+def header_image_for(endpoint, data) -> str:
+    """URL of the submission's header image, or "" when there is none.
+
+    Resolves the endpoint's `show_as_data_header` image attribute against the
+    submitted payload. Reads ``endpoint.attributes.all()`` so a prefetch on the
+    caller's queryset keeps list views to a single extra query.
+    """
+    for attribute in endpoint.attributes.all():
+        if attribute.type == Attribute.Type.IMAGE and attribute.show_as_data_header:
+            value = (data or {}).get(attribute.key)
+            return str(value).strip() if value else ""
+    return ""
 
 
 class Submission(models.Model):

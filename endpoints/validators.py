@@ -15,6 +15,11 @@ PHONE_REGEX = re.compile(r"^[+]?[\d\s\-()]{3,}$")
 
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# An image attribute holds a URL, not a file. Only http(s) is accepted — the
+# value ends up in an <img>/Coil load and in FCM's `image` field, and FCM will
+# only fetch plain http(s).
+IMAGE_URL_REGEX = re.compile(r"^https?://\S+$", re.IGNORECASE)
+
 BOOL_TRUE = {"true", "1", "yes", "on"}
 BOOL_FALSE = {"false", "0", "no", "off"}
 
@@ -96,6 +101,14 @@ def coerce_value(attr_type: str, raw):
             date.fromisoformat(s)
         except (ValueError, TypeError):
             raise TypeValidationError("Must be an ISO date (YYYY-MM-DD).")
+        return s
+
+    if attr_type == "image":
+        s = str(raw).strip()
+        if not IMAGE_URL_REGEX.match(s):
+            raise TypeValidationError(
+                "Must be an image URL starting with http:// or https://."
+            )
         return s
 
     if attr_type == "boolean":

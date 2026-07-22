@@ -4,6 +4,7 @@ import csv
 import json
 from datetime import timedelta
 
+from django.conf import settings
 from django.db.models import Count, TextField
 from django.db.models.functions import Cast, TruncDate
 from django.http import HttpResponse, JsonResponse
@@ -16,6 +17,8 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
+from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -91,6 +94,53 @@ class _EndpointScopedMixin:
         )
 
 
+class EndpointLogoView(_EndpointScopedMixin, APIView):
+    """Upload (POST) or remove (DELETE) an endpoint's notification logo.
+
+    Multipart, field name ``logo``. Returns the refreshed endpoint detail so the
+    client picks up ``notify_logo_url`` without a second request.
+    """
+
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, endpoint_pk):
+        endpoint = self.get_endpoint()
+        upload = request.FILES.get("logo")
+        if upload is None:
+            raise ValidationError({"logo": "No file was uploaded."})
+
+        if upload.size > settings.LOGO_MAX_BYTES:
+            limit_mb = settings.LOGO_MAX_BYTES / (1024 * 1024)
+            raise ValidationError(
+                {"logo": f"Image must be smaller than {limit_mb:.0f} MB."}
+            )
+        if upload.content_type not in settings.LOGO_ALLOWED_TYPES:
+            allowed = ", ".join(
+                t.split("/")[-1].upper() for t in settings.LOGO_ALLOWED_TYPES
+            )
+            raise ValidationError({"logo": f"Image must be one of: {allowed}."})
+
+        # Replacing a logo should not leave the old file behind.
+        endpoint.notify_logo.delete(save=False)
+        endpoint.notify_logo = upload
+        endpoint.save(update_fields=["notify_logo"])
+
+        return Response(
+            EndpointDetailSerializer(endpoint, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
+
+    def delete(self, request, endpoint_pk):
+        endpoint = self.get_endpoint()
+        endpoint.notify_logo.delete(save=False)
+        endpoint.notify_logo = None
+        endpoint.save(update_fields=["notify_logo"])
+        return Response(
+            EndpointDetailSerializer(endpoint, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
+
+
 class AttributeListCreateView(_EndpointScopedMixin, ListCreateAPIView):
     serializer_class = AttributeSerializer
 
@@ -125,7 +175,8 @@ class SubmissionListView(_EndpointScopedMixin, APIView):
 
     def get(self, request, endpoint_pk=None):
         endpoint = self.get_endpoint()
-        qs = endpoint.submissions.all()
+        # prefetch: header_image resolution walks endpoint.attributes.
+        qs = endpoint.submissions.prefetch_related("endpoint__attributes")
 
         search = request.query_params.get("search", "").strip()
         if search:
@@ -160,9 +211,11 @@ class AllSubmissionsView(ListAPIView):
     pagination_class = SubmissionPagination
 
     def get_queryset(self):
-        qs = Submission.objects.filter(
-            endpoint__owner=self.request.user
-        ).select_related("endpoint")
+        qs = (
+            Submission.objects.filter(endpoint__owner=self.request.user)
+            .select_related("endpoint")
+            .prefetch_related("endpoint__attributes")
+        )
 
         search = self.request.query_params.get("search", "").strip()
         if search:

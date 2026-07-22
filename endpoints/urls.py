@@ -7,6 +7,7 @@ from .views import (
     AllSubmissionsView,
     AttributeDetailView,
     AttributeListCreateView,
+    EndpointLogoView,
     EndpointStatsView,
     EndpointViewSet,
     ExportView,
@@ -25,6 +26,12 @@ urlpatterns = router.urls + [
         "endpoints/<int:endpoint_pk>/stats/",
         EndpointStatsView.as_view(),
         name="endpoint-stats",
+    ),
+    # Notification logo upload/removal
+    path(
+        "endpoints/<int:endpoint_pk>/logo/",
+        EndpointLogoView.as_view(),
+        name="endpoint-logo",
     ),
     # Nested attributes
     path(

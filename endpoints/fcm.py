@@ -50,6 +50,10 @@ def _ensure_initialized():
 # shows a couple of lines anyway, and the full record travels in the data payload.
 NOTIFICATION_BODY_MAX = 240
 
+# The subtitle shares the one-line header with the app name and timestamp,
+# so it has far less room than the body.
+NOTIFICATION_SUBTITLE_MAX = 40
+
 GENERIC_BODY = "New submission received"
 
 
@@ -60,41 +64,63 @@ def _display_value(value) -> str:
     return str(value)
 
 
-def build_notification(endpoint, submission) -> tuple[str, str]:
-    """Return the ``(title, body)`` to show for ``submission``.
+def build_notification(endpoint, submission) -> dict:
+    """Everything the client needs to render the notification for ``submission``.
 
-    Title: the endpoint's ``notify_title`` when set, else the default
-    ``New submission · <name>``.
+    Returns ``{title, body, subtitle, image_url, logo_url}``:
 
-    Body: the values of the attributes flagged ``show_in_notification``, in
-    attribute order, as ``Label: value`` joined by ``·``. Fields the caller
-    omitted or left empty are skipped, so a notification never shows blanks.
-    When nothing is selected (or nothing usable was submitted) the body falls
-    back to the generic line — the previous behaviour.
+    - **title** — ``notify_title`` when set, else ``New submission · <name>``.
+    - **body** — values of the attributes flagged ``show_in_notification``, in
+      attribute order, as ``Label: value`` joined by ``·``. Omitted/empty fields
+      are skipped; falls back to the generic line so the body is never blank.
+    - **subtitle** — the raw value of the ``show_as_subtitle`` attribute (no
+      label prefix; it renders in the cramped header line). ``""`` if unset.
+    - **image_url** — the URL from an ``image`` attribute that is flagged
+      ``show_in_notification``, shown as the big picture. ``""`` if none.
+    - **logo_url** — the endpoint's uploaded logo, shown as the large icon.
+
+    Image attributes never contribute to the body — a raw URL reads as noise.
     """
-    title = (endpoint.notify_title or "").strip() or f"New submission · {endpoint.name}"
-
     data = submission.data if isinstance(submission.data, dict) else {}
-    selected = endpoint.attributes.filter(show_in_notification=True).order_by(
-        "order", "id"
-    )
+    # One pass over the prefetched attributes; they arrive in (order, id).
+    attributes = sorted(endpoint.attributes.all(), key=lambda a: (a.order, a.id))
+
+    def value_of(attribute) -> str:
+        raw = data.get(attribute.key)
+        if raw is None:
+            return ""
+        return _display_value(raw).strip()
 
     parts = []
-    for attribute in selected:
-        if attribute.key not in data:
-            continue
-        value = data[attribute.key]
-        if value is None:
-            continue
-        text = _display_value(value).strip()
-        if not text:
-            continue
-        parts.append(f"{attribute.label}: {text}")
+    subtitle = ""
+    image_url = ""
+
+    for attribute in attributes:
+        text = value_of(attribute)
+        is_image = attribute.type == "image"
+
+        if attribute.show_as_subtitle and text and not subtitle:
+            subtitle = text
+        if is_image and attribute.show_in_notification and text and not image_url:
+            image_url = text
+        if attribute.show_in_notification and text and not is_image:
+            parts.append(f"{attribute.label}: {text}")
 
     body = " · ".join(parts) if parts else GENERIC_BODY
     if len(body) > NOTIFICATION_BODY_MAX:
         body = body[: NOTIFICATION_BODY_MAX - 1].rstrip() + "…"
-    return title, body
+
+    if len(subtitle) > NOTIFICATION_SUBTITLE_MAX:
+        subtitle = subtitle[: NOTIFICATION_SUBTITLE_MAX - 1].rstrip() + "…"
+
+    return {
+        "title": (endpoint.notify_title or "").strip()
+        or f"New submission · {endpoint.name}",
+        "body": body,
+        "subtitle": subtitle,
+        "image_url": image_url,
+        "logo_url": endpoint.notify_logo_url,
+    }
 
 
 def send_submission_notification(endpoint, submission) -> dict:
@@ -125,7 +151,7 @@ def send_submission_notification(endpoint, submission) -> dict:
     if not devices:
         return report
 
-    title_text, body_text = build_notification(endpoint, submission)
+    content = build_notification(endpoint, submission)
     # Data values must be strings for FCM. `submission_json` embeds the whole
     # submission so tapping the notification opens it with no extra fetch.
     # (FCM caps the total data payload at ~4KB; very large submissions may
@@ -143,17 +169,24 @@ def send_submission_notification(endpoint, submission) -> dict:
         "endpoint_name": endpoint.name,
         "submission_id": str(submission.id),
         "submission_json": submission_json,
-        # The client renders from these so a foreground notification looks
-        # identical to the tray one the system builds from `notification`.
-        "title": title_text,
-        "body": body_text,
+        # The app builds the notification itself from these (see below).
+        "title": content["title"],
+        "body": content["body"],
+        "subtitle": content["subtitle"],
+        "image_url": content["image_url"],
+        "logo_url": content["logo_url"],
     }
 
     stale_tokens = []
     for device in devices:
+        # Deliberately **data-only** (no `notification` block). With a
+        # notification block the system builds the tray notification itself
+        # whenever the app is backgrounded, which silently drops the subtitle
+        # and the logo. Data-only means our own handler always runs and the
+        # notification looks the same foreground or background; `priority=high`
+        # keeps delivery prompt.
         message = messaging.Message(
             token=device.fcm_token,
-            notification=messaging.Notification(title=title_text, body=body_text),
             data=data_payload,
             android=messaging.AndroidConfig(priority="high"),
         )

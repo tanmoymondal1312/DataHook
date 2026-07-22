@@ -157,6 +157,20 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+
+# --------------------------------------------------------------------------- #
+# Media (user uploads — currently endpoint notification logos)
+# --------------------------------------------------------------------------- #
+# Served by nginx from MEDIA_ROOT in production (see deploy/nginx-datahook.conf)
+# and by Django itself when DEBUG. Logos must be publicly readable: FCM fetches
+# the URL server-side to render the notification's large icon.
+MEDIA_URL = "/media/"
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
+
+# Upload guard rails for logos.
+LOGO_MAX_BYTES = int(os.getenv("LOGO_MAX_BYTES", str(2 * 1024 * 1024)))  # 2 MB
+LOGO_ALLOWED_TYPES = ("image/png", "image/jpeg", "image/webp")
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 

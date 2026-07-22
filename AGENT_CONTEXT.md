@@ -75,13 +75,22 @@ or `GOOGLE_WEB_CLIENT_ID` unset (feature off — password login unaffected).
   `show_in_notification` (bool, default false — drives the push body).
   - `key` = strict slug: `^[a-z_][a-z0-9_]*$` (lowercase/digits/underscore, no
     spaces), **unique per endpoint**. This is the JSON key developers POST.
-  - `type` ∈ `text | email | number | phone | date | boolean`.
+  - `type` ∈ `text | email | number | phone | date | boolean | image`.
+  - `image` holds a **URL** (not a file); it can drive the notification
+    picture and the app-wide data-header image.
+  - Display flags: `show_in_notification`, `show_as_subtitle`,
+    `show_as_data_header`. The last two are **exclusive per endpoint** —
+    setting one clears it on the endpoint's other attributes (enforced in
+    `Attribute.save()`).
 - **Submission**: `data` (JSON object of key→value), `source_ip`, `created_at`.
+  Serialized with `header_image` — the resolved URL of the endpoint's
+  `show_as_data_header` image attribute for that payload, or `""`.
 - **Device**: `fcm_token` (unique), `platform` (default `android`) — per user.
 
 **Type validation rules (ingest):** `email` valid email · `phone` digits/`+`/`-`/
 space · `number` int/float · `date` ISO `YYYY-MM-DD` · `boolean`
-`true/false/1/0` · `text` any string.
+`true/false/1/0` · `text` any string · `image` must match
+`^https?://\S+$` (http/https only — FCM and Coil will not fetch `data:`).
 
 ---
 
@@ -104,6 +113,8 @@ Users only ever see/modify **their own** resources (`404` otherwise).
 | PATCH | `/api/endpoints/{id}/` | `{name?, description?, notify_on_submit?, notify_title?}` |
 | DELETE | `/api/endpoints/{id}/` | `204` |
 | POST | `/api/endpoints/{id}/rotate-key/` | `200 {api_key}` (regenerates) |
+| POST | `/api/endpoints/{id}/logo/` | **multipart**, field `logo` → `200` full detail |
+| DELETE | `/api/endpoints/{id}/logo/` | `200` full detail (logo cleared) |
 
 **Endpoint list item shape:** `{id, name, slug, description, notify_on_submit,
 notify_title, ingest_url, submission_count, attribute_count, created_at}`.
@@ -116,7 +127,8 @@ notify_title, ingest_url, submission_count, attribute_count, created_at}`.
 | PATCH | `/api/endpoints/{id}/attributes/{aid}/` | partial |
 | DELETE | `/api/endpoints/{id}/attributes/{aid}/` | `204` |
 
-**Attribute shape:** `{id, label, key, type, required, order, show_in_notification}`.
+**Attribute shape:** `{id, label, key, type, required, order,
+show_in_notification, show_as_subtitle, show_as_data_header}`.
 
 ### Submissions (nested)
 | Method | Path | Notes |
@@ -162,9 +174,14 @@ Ingest allows **all origins** (CORS) so plain HTML forms and any app can post.
 
 On a new submission to an endpoint with `notify_on_submit=true`, the backend
 sends (via `messaging.send()`, FCM HTTP v1) to **every device token** of the
-endpoint owner:
+endpoint owner. Messages are **data-only** (no `notification` block): with one,
+the system builds the tray notification itself whenever the app is backgrounded
+and silently drops the subtitle and large icon. Data-only means the app's
+handler always runs, so the notification looks identical foreground or
+background; `priority=high` keeps delivery prompt.
 
-Title and body are built by `fcm.build_notification(endpoint, submission)`:
+`fcm.build_notification(endpoint, submission)` returns
+`{title, body, subtitle, image_url, logo_url}`:
 
 - **title** — `endpoint.notify_title` when set, else `New submission · {name}`.
 - **body** — the values of the attributes flagged `show_in_notification`, in
@@ -173,6 +190,17 @@ Title and body are built by `fcm.build_notification(endpoint, submission)`:
   to 240 chars with an ellipsis. When no attribute is selected (or nothing
   usable was submitted) the body falls back to `New submission received` — which
   is exactly the pre-feature behaviour, so existing endpoints are unaffected.
+  **Image attributes never appear in the body** — a raw URL reads as noise.
+- **subtitle** — the bare value (no `Label:` prefix) of the `show_as_subtitle`
+  attribute, truncated to 40 chars. `""` when unset.
+- **image_url** — the URL from an `image` attribute flagged
+  `show_in_notification`; the client renders it as the big picture.
+- **logo_url** — the endpoint's uploaded logo (absolute URL); the client renders
+  it as the notification's **large icon**.
+
+> ⚠️ The **small status-bar icon cannot come from the server** — Android
+> requires a local drawable and renders it as a flat silhouette. An uploaded
+> logo can therefore only ever be the large icon.
 - **data** (all values are strings):
   ```json
   {
@@ -181,8 +209,8 @@ Title and body are built by `fcm.build_notification(endpoint, submission)`:
     "endpoint_name": "<name>",
     "submission_id": "<id>",
     "submission_json": "{\"id\":.., \"data\":{...}, \"created_at\":\"..\"}",
-    "title": "<same as notification.title>",
-    "body":  "<same as notification.body>"
+    "title": "…", "body": "…", "subtitle": "…",
+    "image_url": "…", "logo_url": "…"
   }
   ```
 
@@ -280,8 +308,11 @@ deploy/      systemd unit + nginx server block
   `BASE_URL`, `FIREBASE_CREDENTIALS` (path to service-account JSON, kept out of git),
   `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, throttle rates,
   `GOOGLE_WEB_CLIENT_ID` (OAuth **Web** client ID, `client_type: 3` in the
-  Android app's `google-services.json`).
-- Run tests: `./venv/bin/python manage.py test` (42 tests). Throttling is
+  Android app's `google-services.json`), `MEDIA_ROOT`, `LOGO_MAX_BYTES`.
+- **Media:** logos live under `MEDIA_ROOT/endpoint-logos/` and are served by
+  nginx at `/media/` (see `deploy/nginx-datahook.conf`). Needs Pillow.
+  Back this directory up alongside the database.
+- Run tests: `./venv/bin/python manage.py test` (70 tests). Throttling is
   auto-disabled under `manage.py test` (`settings.TESTING`) — the rate-limit
   counters are cache-backed and would otherwise leak between test cases.
 - **Prod deploy of a change:** `scp` the file(s) to `/home/tanmoy/apps/datahook/…`

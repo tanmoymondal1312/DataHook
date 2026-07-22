@@ -1,12 +1,22 @@
 """Tests for the ingest pipeline, endpoint API and ownership isolation."""
 
+import io
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from PIL import Image
 from rest_framework.test import APITestCase
 
-from .fcm import NOTIFICATION_BODY_MAX, build_notification
-from .models import Attribute, Endpoint, Submission
+from .fcm import (
+    NOTIFICATION_BODY_MAX,
+    NOTIFICATION_SUBTITLE_MAX,
+    build_notification,
+)
+from .models import Attribute, Endpoint, Submission, header_image_for
+from .validators import TypeValidationError, coerce_value
 
 User = get_user_model()
 
@@ -224,7 +234,11 @@ class AggregateAndStatsTests(APITestCase):
         self.assertEqual(body["count"], 2)  # not the foreign one
         item = body["results"][0]
         self.assertEqual(
-            set(item), {"id", "endpoint_id", "endpoint_name", "data", "created_at"}
+            set(item),
+            {
+                "id", "endpoint_id", "endpoint_name", "data", "header_image",
+                "created_at",
+            },
         )
         # Newest first (s2 created after s1).
         self.assertEqual(body["results"][0]["id"], self.s2.id)
@@ -322,34 +336,34 @@ class NotificationContentTests(TestCase):
     # --- title ------------------------------------------------------------ #
 
     def test_title_defaults_to_the_endpoint_name(self):
-        title, _ = build_notification(self.endpoint, self.make_submission(name="Ada"))
+        title = build_notification(self.endpoint, self.make_submission(name="Ada"))["title"]
         self.assertEqual(title, "New submission · Contact Form")
 
     def test_custom_title_is_used_when_set(self):
         self.endpoint.notify_title = "🎉 New lead!"
-        title, _ = build_notification(self.endpoint, self.make_submission(name="Ada"))
+        title = build_notification(self.endpoint, self.make_submission(name="Ada"))["title"]
         self.assertEqual(title, "🎉 New lead!")
 
     def test_blank_custom_title_falls_back_to_the_default(self):
         self.endpoint.notify_title = "   "
-        title, _ = build_notification(self.endpoint, self.make_submission(name="Ada"))
+        title = build_notification(self.endpoint, self.make_submission(name="Ada"))["title"]
         self.assertEqual(title, "New submission · Contact Form")
 
     # --- body ------------------------------------------------------------- #
 
     def test_body_is_generic_when_no_attribute_is_selected(self):
-        _, body = build_notification(
+        body = build_notification(
             self.endpoint, self.make_submission(name="Ada", email="ada@example.com")
-        )
+        )["body"]
         self.assertEqual(body, "New submission received")
 
     def test_body_shows_only_the_selected_attributes(self):
         self.name_attr.show_in_notification = True
         self.name_attr.save(update_fields=["show_in_notification"])
 
-        _, body = build_notification(
+        body = build_notification(
             self.endpoint, self.make_submission(name="Ada", email="ada@example.com")
-        )
+        )["body"]
         self.assertEqual(body, "Full Name: Ada")
 
     def test_multiple_selected_attributes_follow_attribute_order(self):
@@ -361,9 +375,9 @@ class NotificationContentTests(TestCase):
         self.name_attr.show_in_notification = True
         self.name_attr.save(update_fields=["order", "show_in_notification"])
 
-        _, body = build_notification(
+        body = build_notification(
             self.endpoint, self.make_submission(name="Ada", email="ada@example.com")
-        )
+        )["body"]
         self.assertEqual(body, "Email: ada@example.com · Full Name: Ada")
 
     def test_missing_and_empty_values_are_skipped(self):
@@ -372,13 +386,13 @@ class NotificationContentTests(TestCase):
             attr.save(update_fields=["show_in_notification"])
 
         # `email` submitted blank, `name` present.
-        _, body = build_notification(
+        body = build_notification(
             self.endpoint, self.make_submission(name="Ada", email="   ")
-        )
+        )["body"]
         self.assertEqual(body, "Full Name: Ada")
 
         # Neither usable -> generic fallback, never an empty notification.
-        _, body = build_notification(self.endpoint, self.make_submission(email=""))
+        body = build_notification(self.endpoint, self.make_submission(email=""))["body"]
         self.assertEqual(body, "New submission received")
 
     def test_booleans_render_as_yes_no(self):
@@ -386,10 +400,10 @@ class NotificationContentTests(TestCase):
             endpoint=self.endpoint, label="Subscribed", key="subscribed",
             type="boolean", order=2, show_in_notification=True,
         )
-        _, body = build_notification(self.endpoint, self.make_submission(subscribed=True))
+        body = build_notification(self.endpoint, self.make_submission(subscribed=True))["body"]
         self.assertEqual(body, "Subscribed: Yes")
 
-        _, body = build_notification(self.endpoint, self.make_submission(subscribed=False))
+        body = build_notification(self.endpoint, self.make_submission(subscribed=False))["body"]
         self.assertEqual(body, "Subscribed: No")
         self.assertTrue(flag.show_in_notification)
 
@@ -397,7 +411,7 @@ class NotificationContentTests(TestCase):
         self.name_attr.show_in_notification = True
         self.name_attr.save(update_fields=["show_in_notification"])
 
-        _, body = build_notification(self.endpoint, self.make_submission(name="x" * 500))
+        body = build_notification(self.endpoint, self.make_submission(name="x" * 500))["body"]
         self.assertLessEqual(len(body), NOTIFICATION_BODY_MAX)
         self.assertTrue(body.endswith("…"))
 
@@ -495,3 +509,290 @@ class NotificationSettingsApiTests(APITestCase):
         )
         self.assertEqual(r.status_code, 201)
         self.assertFalse(r.json()["show_in_notification"])
+
+
+class NotificationVisualTests(TestCase):
+    """Subtitle, notification image and logo — the visual extras."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="visual@example.com", password="pw12345678"
+        )
+        self.endpoint = Endpoint.objects.create(owner=self.user, name="Contact Form")
+        self.name_attr = Attribute.objects.create(
+            endpoint=self.endpoint, label="Full Name", key="name", type="text", order=0,
+        )
+        self.photo_attr = Attribute.objects.create(
+            endpoint=self.endpoint, label="Photo", key="photo", type="image", order=1,
+        )
+
+    def build(self, **data):
+        submission = Submission.objects.create(endpoint=self.endpoint, data=data)
+        return build_notification(self.endpoint, submission)
+
+    # --- subtitle --------------------------------------------------------- #
+
+    def test_subtitle_is_empty_by_default(self):
+        self.assertEqual(self.build(name="Ada")["subtitle"], "")
+
+    def test_subtitle_is_the_bare_value_without_a_label(self):
+        self.name_attr.show_as_subtitle = True
+        self.name_attr.save()
+        self.assertEqual(self.build(name="Ada")["subtitle"], "Ada")
+
+    def test_subtitle_is_truncated(self):
+        self.name_attr.show_as_subtitle = True
+        self.name_attr.save()
+        subtitle = self.build(name="y" * 200)["subtitle"]
+        self.assertLessEqual(len(subtitle), NOTIFICATION_SUBTITLE_MAX)
+        self.assertTrue(subtitle.endswith("…"))
+
+    def test_only_one_attribute_can_be_the_subtitle(self):
+        self.name_attr.show_as_subtitle = True
+        self.name_attr.save()
+        self.photo_attr.show_as_subtitle = True
+        self.photo_attr.save()
+
+        self.name_attr.refresh_from_db()
+        self.assertFalse(self.name_attr.show_as_subtitle)
+        self.assertTrue(Attribute.objects.get(pk=self.photo_attr.pk).show_as_subtitle)
+
+    # --- image ------------------------------------------------------------ #
+
+    def test_image_attribute_supplies_the_picture_not_the_body(self):
+        self.photo_attr.show_in_notification = True
+        self.photo_attr.save()
+        self.name_attr.show_in_notification = True
+        self.name_attr.save()
+
+        content = self.build(name="Ada", photo="https://example.com/a.jpg")
+        self.assertEqual(content["image_url"], "https://example.com/a.jpg")
+        # The raw URL must not pollute the body text.
+        self.assertEqual(content["body"], "Full Name: Ada")
+
+    def test_image_is_empty_when_not_flagged_or_not_submitted(self):
+        self.assertEqual(self.build(photo="https://example.com/a.jpg")["image_url"], "")
+
+        self.photo_attr.show_in_notification = True
+        self.photo_attr.save()
+        self.assertEqual(self.build(name="Ada")["image_url"], "")
+
+    # --- logo ------------------------------------------------------------- #
+
+    def test_logo_url_is_empty_without_an_upload(self):
+        self.assertEqual(self.build(name="Ada")["logo_url"], "")
+
+    def test_logo_url_is_absolute(self):
+        self.endpoint.notify_logo = "endpoint-logos/example.png"
+        self.endpoint.save(update_fields=["notify_logo"])
+        logo = self.build(name="Ada")["logo_url"]
+        self.assertTrue(logo.startswith(settings.BASE_URL), logo)
+        self.assertIn("/media/endpoint-logos/example.png", logo)
+
+    # --- data header ------------------------------------------------------ #
+
+    def test_header_image_resolves_only_for_a_flagged_image_attribute(self):
+        submission = Submission.objects.create(
+            endpoint=self.endpoint, data={"photo": "https://example.com/h.jpg"}
+        )
+        self.assertEqual(header_image_for(self.endpoint, submission.data), "")
+
+        self.photo_attr.show_as_data_header = True
+        self.photo_attr.save()
+        self.endpoint.refresh_from_db()
+        self.assertEqual(
+            header_image_for(self.endpoint, submission.data),
+            "https://example.com/h.jpg",
+        )
+
+    def test_only_one_attribute_can_be_the_data_header(self):
+        second = Attribute.objects.create(
+            endpoint=self.endpoint, label="Cover", key="cover", type="image", order=2,
+        )
+        self.photo_attr.show_as_data_header = True
+        self.photo_attr.save()
+        second.show_as_data_header = True
+        second.save()
+
+        self.photo_attr.refresh_from_db()
+        self.assertFalse(self.photo_attr.show_as_data_header)
+
+
+class ImageAttributeTypeTests(TestCase):
+    """The `image` attribute type validates URLs at ingest."""
+
+    def test_accepts_http_and_https_urls(self):
+        self.assertEqual(
+            coerce_value("image", "https://example.com/a.png"),
+            "https://example.com/a.png",
+        )
+        self.assertEqual(
+            coerce_value("image", " http://example.com/b.jpg "),
+            "http://example.com/b.jpg",
+        )
+
+    def test_rejects_non_urls_and_other_schemes(self):
+        for bad in ("not a url", "example.com/a.png", "ftp://example.com/a.png",
+                    "javascript:alert(1)", "data:image/png;base64,AAAA"):
+            with self.assertRaises(TypeValidationError, msg=bad):
+                coerce_value("image", bad)
+
+
+class LogoUploadApiTests(APITestCase):
+    """POST/DELETE /api/endpoints/{id}/logo/ — multipart upload of the logo."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="logo@example.com", password="pw12345678"
+        )
+        r = self.client.post(
+            reverse("login"),
+            {"email": self.user.email, "password": "pw12345678"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
+        self.endpoint = Endpoint.objects.create(owner=self.user, name="Contact Form")
+        self.url = reverse("endpoint-logo", args=[self.endpoint.id])
+
+    @staticmethod
+    def png_upload(name="logo.png", size=(8, 8)):
+        buffer = io.BytesIO()
+        Image.new("RGB", size, "red").save(buffer, format="PNG")
+        buffer.seek(0)
+        return SimpleUploadedFile(name, buffer.read(), content_type="image/png")
+
+    def test_upload_sets_an_absolute_logo_url(self):
+        r = self.client.post(self.url, {"logo": self.png_upload()}, format="multipart")
+        self.assertEqual(r.status_code, 200)
+
+        logo_url = r.json()["notify_logo_url"]
+        self.assertTrue(logo_url.startswith(settings.BASE_URL), logo_url)
+        self.assertIn("/media/endpoint-logos/", logo_url)
+
+        self.endpoint.refresh_from_db()
+        self.assertTrue(self.endpoint.notify_logo)
+
+    def test_detail_exposes_logo_url_and_defaults_to_blank(self):
+        detail = self.client.get(
+            reverse("endpoint-detail", args=[self.endpoint.id])
+        ).json()
+        self.assertEqual(detail["notify_logo_url"], "")
+
+    def test_delete_clears_the_logo(self):
+        self.client.post(self.url, {"logo": self.png_upload()}, format="multipart")
+        r = self.client.delete(self.url)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["notify_logo_url"], "")
+
+        self.endpoint.refresh_from_db()
+        self.assertFalse(self.endpoint.notify_logo)
+
+    def test_rejects_a_missing_file(self):
+        r = self.client.post(self.url, {}, format="multipart")
+        self.assertEqual(r.status_code, 400)
+
+    def test_rejects_a_disallowed_content_type(self):
+        bad = SimpleUploadedFile("logo.gif", b"GIF89a", content_type="image/gif")
+        r = self.client.post(self.url, {"logo": bad}, format="multipart")
+        self.assertEqual(r.status_code, 400)
+
+    def test_rejects_an_oversized_file(self):
+        big = SimpleUploadedFile(
+            "big.png", b"x" * (settings.LOGO_MAX_BYTES + 1), content_type="image/png"
+        )
+        r = self.client.post(self.url, {"logo": big}, format="multipart")
+        self.assertEqual(r.status_code, 400)
+
+    def test_another_user_cannot_touch_the_logo(self):
+        other = User.objects.create_user(email="other@example.com", password="pw12345678")
+        r = self.client.post(
+            reverse("login"),
+            {"email": other.email, "password": "pw12345678"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
+        r = self.client.post(self.url, {"logo": self.png_upload()}, format="multipart")
+        self.assertEqual(r.status_code, 404)
+
+
+class VisualFlagsApiTests(APITestCase):
+    """The new attribute flags must round-trip through the API."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="flags@example.com", password="pw12345678"
+        )
+        r = self.client.post(
+            reverse("login"),
+            {"email": self.user.email, "password": "pw12345678"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
+        self.endpoint = Endpoint.objects.create(owner=self.user, name="Contact Form")
+        self.list_url = reverse("attribute-list", args=[self.endpoint.id])
+
+    def test_image_attribute_with_all_flags_round_trips(self):
+        r = self.client.post(
+            self.list_url,
+            {
+                "label": "Photo", "key": "photo", "type": "image",
+                "required": False, "order": 0,
+                "show_in_notification": True,
+                "show_as_subtitle": True,
+                "show_as_data_header": True,
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertEqual(body["type"], "image")
+        self.assertTrue(body["show_in_notification"])
+        self.assertTrue(body["show_as_subtitle"])
+        self.assertTrue(body["show_as_data_header"])
+
+        listed = self.client.get(self.list_url).json()[0]
+        self.assertTrue(listed["show_as_data_header"])
+
+    def test_flags_default_to_false(self):
+        r = self.client.post(
+            self.list_url,
+            {"label": "Name", "key": "name", "type": "text", "required": False},
+            format="json",
+        )
+        body = r.json()
+        self.assertFalse(body["show_as_subtitle"])
+        self.assertFalse(body["show_as_data_header"])
+
+    def test_setting_subtitle_on_a_second_attribute_clears_the_first(self):
+        first = self.client.post(
+            self.list_url,
+            {"label": "Name", "key": "name", "type": "text", "required": False,
+             "order": 0, "show_as_subtitle": True},
+            format="json",
+        ).json()
+        self.client.post(
+            self.list_url,
+            {"label": "Email", "key": "email", "type": "email", "required": False,
+             "order": 1, "show_as_subtitle": True},
+            format="json",
+        )
+
+        listed = {a["key"]: a for a in self.client.get(self.list_url).json()}
+        self.assertFalse(listed["name"]["show_as_subtitle"])
+        self.assertTrue(listed["email"]["show_as_subtitle"])
+        self.assertEqual(listed["name"]["id"], first["id"])
+
+    def test_submission_exposes_header_image(self):
+        self.client.post(
+            self.list_url,
+            {"label": "Photo", "key": "photo", "type": "image", "required": False,
+             "order": 0, "show_as_data_header": True},
+            format="json",
+        )
+        Submission.objects.create(
+            endpoint=self.endpoint, data={"photo": "https://example.com/x.jpg"}
+        )
+        results = self.client.get(
+            reverse("submission-list", args=[self.endpoint.id])
+        ).json()["results"]
+        self.assertEqual(results[0]["header_image"], "https://example.com/x.jpg")
