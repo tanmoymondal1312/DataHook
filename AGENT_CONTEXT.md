@@ -184,9 +184,10 @@ background; `priority=high` keeps delivery prompt.
 `{title, body, subtitle, image_url, logo_url}`:
 
 - **title** — `endpoint.notify_title` when set, else `New submission · {name}`.
-- **body** — the values of the attributes flagged `show_in_notification`, in
-  attribute order, as `Label: value` joined by ` · `. Keys the caller omitted or
-  sent empty are skipped; booleans render as `Yes`/`No`; the result is truncated
+- **body** — the **values** of the attributes flagged `show_in_notification`,
+  in attribute order, joined by ` · `. **Labels are not shown** — they are the
+  owner's internal field names and only crowd the notification. Keys the caller
+  omitted or sent empty are skipped; booleans render as `Yes`/`No`; truncated
   to 240 chars with an ellipsis. When no attribute is selected (or nothing
   usable was submitted) the body falls back to `New submission received` — which
   is exactly the pre-feature behaviour, so existing endpoints are unaffected.

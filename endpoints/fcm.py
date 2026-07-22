@@ -70,9 +70,11 @@ def build_notification(endpoint, submission) -> dict:
     Returns ``{title, body, subtitle, image_url, logo_url}``:
 
     - **title** — ``notify_title`` when set, else ``New submission · <name>``.
-    - **body** — values of the attributes flagged ``show_in_notification``, in
-      attribute order, as ``Label: value`` joined by ``·``. Omitted/empty fields
-      are skipped; falls back to the generic line so the body is never blank.
+    - **body** — the **values** of the attributes flagged
+      ``show_in_notification``, in attribute order, joined by ``·``. Labels are
+      deliberately omitted: they are the owner's internal field names and only
+      crowd the two lines a notification gets. Omitted/empty fields are skipped;
+      falls back to the generic line so the body is never blank.
     - **subtitle** — the raw value of the ``show_as_subtitle`` attribute (no
       label prefix; it renders in the cramped header line). ``""`` if unset.
     - **image_url** — the URL from an ``image`` attribute that is flagged
@@ -104,7 +106,9 @@ def build_notification(endpoint, submission) -> dict:
         if is_image and attribute.show_in_notification and text and not image_url:
             image_url = text
         if attribute.show_in_notification and text and not is_image:
-            parts.append(f"{attribute.label}: {text}")
+            # Values only — the labels are the owner's own field names and just
+            # eat the little room a notification has.
+            parts.append(text)
 
     body = " · ".join(parts) if parts else GENERIC_BODY
     if len(body) > NOTIFICATION_BODY_MAX:

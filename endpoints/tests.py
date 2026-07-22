@@ -364,7 +364,19 @@ class NotificationContentTests(TestCase):
         body = build_notification(
             self.endpoint, self.make_submission(name="Ada", email="ada@example.com")
         )["body"]
-        self.assertEqual(body, "Full Name: Ada")
+        self.assertEqual(body, "Ada")
+
+    def test_body_never_includes_the_attribute_label(self):
+        """Only the value is shown — the label is the owner's field name."""
+        self.name_attr.show_in_notification = True
+        self.name_attr.save(update_fields=["show_in_notification"])
+
+        body = build_notification(
+            self.endpoint, self.make_submission(name="Ada")
+        )["body"]
+        self.assertNotIn("Full Name", body)
+        self.assertNotIn(":", body)
+        self.assertEqual(body, "Ada")
 
     def test_multiple_selected_attributes_follow_attribute_order(self):
         # Flip `order` so the email field comes first.
@@ -378,7 +390,7 @@ class NotificationContentTests(TestCase):
         body = build_notification(
             self.endpoint, self.make_submission(name="Ada", email="ada@example.com")
         )["body"]
-        self.assertEqual(body, "Email: ada@example.com · Full Name: Ada")
+        self.assertEqual(body, "ada@example.com · Ada")
 
     def test_missing_and_empty_values_are_skipped(self):
         for attr in (self.name_attr, self.email_attr):
@@ -389,7 +401,7 @@ class NotificationContentTests(TestCase):
         body = build_notification(
             self.endpoint, self.make_submission(name="Ada", email="   ")
         )["body"]
-        self.assertEqual(body, "Full Name: Ada")
+        self.assertEqual(body, "Ada")
 
         # Neither usable -> generic fallback, never an empty notification.
         body = build_notification(self.endpoint, self.make_submission(email=""))["body"]
@@ -401,10 +413,10 @@ class NotificationContentTests(TestCase):
             type="boolean", order=2, show_in_notification=True,
         )
         body = build_notification(self.endpoint, self.make_submission(subscribed=True))["body"]
-        self.assertEqual(body, "Subscribed: Yes")
+        self.assertEqual(body, "Yes")
 
         body = build_notification(self.endpoint, self.make_submission(subscribed=False))["body"]
-        self.assertEqual(body, "Subscribed: No")
+        self.assertEqual(body, "No")
         self.assertTrue(flag.show_in_notification)
 
     def test_long_bodies_are_truncated(self):
@@ -568,7 +580,7 @@ class NotificationVisualTests(TestCase):
         content = self.build(name="Ada", photo="https://example.com/a.jpg")
         self.assertEqual(content["image_url"], "https://example.com/a.jpg")
         # The raw URL must not pollute the body text.
-        self.assertEqual(content["body"], "Full Name: Ada")
+        self.assertEqual(content["body"], "Ada")
 
     def test_image_is_empty_when_not_flagged_or_not_submitted(self):
         self.assertEqual(self.build(photo="https://example.com/a.jpg")["image_url"], "")
