@@ -140,6 +140,14 @@ The `/ingest/{slug}/` route is public and authenticated by the `X-API-Key` heade
 | GET | `/api/endpoints/{id}/submissions/?search=&page=` | paginated, page size 20. `search` = case-insensitive contains across the JSON payload. |
 | DELETE | `/api/endpoints/{id}/submissions/{sid}/` | `204` |
 | GET | `/api/endpoints/{id}/export/?format=csv\|json` | file download; columns = attribute keys + `created_at` |
+| GET | `/api/endpoints/{id}/stats/` | owner-only analytics (see below) |
+
+### Aggregate feed & stats
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/submissions/?search=&page=` | **all** submissions across the current user's endpoints, newest first, paginated (page size 20). Each item: `{id, endpoint_id, endpoint_name, data, created_at}`. Shape: `{count, next, previous, results:[...]}`. |
+| GET | `/api/endpoints/{id}/stats/` | owner-only. Returns `{total, today, last_7_days, daily}` where `daily` is the last **30 days** as `[{date:"YYYY-MM-DD", count:int}, …]`, zero-filled so the chart has no gaps. |
 
 ### Public ingest
 
@@ -194,16 +202,17 @@ sends to every device token of that endpoint's owner:
 - **data**:
   ```json
   {
+    "type": "submission",
     "endpoint_id": "<id>",
     "endpoint_name": "<name>",
-    "body": "New submission received",
     "submission_id": "<id>",
-    "type": "submission"
+    "submission_json": "{\"id\":.., \"data\":{...}, \"created_at\":\"..\"}"
   }
   ```
-  (`endpoint_id` / `endpoint_name` / `body` are the documented contract;
-  `submission_id` / `type` are additive so the client can open the exact
-  submission.)
+  `submission_json` is a JSON **string** embedding the whole submission, so
+  tapping the notification opens that exact record with no extra fetch. (FCM
+  caps the data payload at ~4 KB; very large submissions may exceed it — such a
+  send is logged as a failure and does **not** prune the token.)
 
 Tokens FCM reports as **invalid or unregistered** (`UnregisteredError`,
 `SenderIdMismatchError`, `InvalidArgumentError`) are pruned from the DB

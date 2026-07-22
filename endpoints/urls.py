@@ -4,8 +4,10 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    AllSubmissionsView,
     AttributeDetailView,
     AttributeListCreateView,
+    EndpointStatsView,
     EndpointViewSet,
     ExportView,
     SubmissionDetailView,
@@ -16,6 +18,14 @@ router = DefaultRouter()
 router.register("endpoints", EndpointViewSet, basename="endpoint")
 
 urlpatterns = router.urls + [
+    # Cross-endpoint submission feed (all of the user's endpoints)
+    path("submissions/", AllSubmissionsView.as_view(), name="all-submissions"),
+    # Per-endpoint stats
+    path(
+        "endpoints/<int:endpoint_pk>/stats/",
+        EndpointStatsView.as_view(),
+        name="endpoint-stats",
+    ),
     # Nested attributes
     path(
         "endpoints/<int:endpoint_pk>/attributes/",

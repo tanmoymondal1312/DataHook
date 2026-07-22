@@ -5,6 +5,7 @@ Admin SDK cannot be initialized, push simply becomes a no-op so the rest of the
 API keeps working (useful for local dev without a service-account file).
 """
 
+import json
 import logging
 import os
 
@@ -74,15 +75,23 @@ def send_submission_notification(endpoint, submission) -> dict:
         return report
 
     body_text = "New submission received"
-    # Data values must be strings for FCM. These three keys are the documented
-    # contract; submission_id/type are additive extras for the client to route
-    # to / open the specific submission.
+    # Data values must be strings for FCM. `submission_json` embeds the whole
+    # submission so tapping the notification opens it with no extra fetch.
+    # (FCM caps the total data payload at ~4KB; very large submissions may
+    # exceed it — see the InvalidArgumentError handling below.)
+    submission_json = json.dumps(
+        {
+            "id": submission.id,
+            "data": submission.data,
+            "created_at": submission.created_at.isoformat(),
+        }
+    )
     data_payload = {
+        "type": "submission",
         "endpoint_id": str(endpoint.id),
         "endpoint_name": endpoint.name,
-        "body": body_text,
         "submission_id": str(submission.id),
-        "type": "submission",
+        "submission_json": submission_json,
     }
 
     stale_tokens = []
@@ -104,10 +113,20 @@ def send_submission_notification(endpoint, submission) -> dict:
         except messaging.SenderIdMismatchError:
             # Token belongs to a different Firebase sender — unusable here.
             stale_tokens.append(device.fcm_token)
-        except fb_exceptions.InvalidArgumentError:
-            # The message payload is fixed and valid, so an INVALID_ARGUMENT
-            # here means the registration token itself is malformed/invalid.
-            stale_tokens.append(device.fcm_token)
+        except fb_exceptions.InvalidArgumentError as exc:
+            # INVALID_ARGUMENT can mean a bad token OR a bad/oversized payload.
+            # Only prune when the error is clearly about the registration token,
+            # so a too-large submission_json can't wrongly delete valid tokens.
+            msg = str(exc).lower()
+            if "registration token" in msg or "not a valid fcm" in msg:
+                stale_tokens.append(device.fcm_token)
+            else:
+                report["failed"] += 1
+                logger.warning(
+                    "FCM InvalidArgument (payload, not token) for %s: %s",
+                    device.fcm_token[:12],
+                    exc,
+                )
         except Exception as exc:  # pragma: no cover
             report["failed"] += 1
             logger.warning("FCM send failed for %s: %s", device.fcm_token[:12], exc)

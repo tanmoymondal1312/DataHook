@@ -116,3 +116,15 @@ class SubmissionSerializer(serializers.ModelSerializer):
         model = Submission
         fields = ["id", "data", "source_ip", "created_at"]
         read_only_fields = fields
+
+
+class AggregateSubmissionSerializer(serializers.ModelSerializer):
+    """Submission item for the cross-endpoint feed (carries endpoint identity)."""
+
+    endpoint_id = serializers.IntegerField(source="endpoint.id", read_only=True)
+    endpoint_name = serializers.CharField(source="endpoint.name", read_only=True)
+
+    class Meta:
+        model = Submission
+        fields = ["id", "endpoint_id", "endpoint_name", "data", "created_at"]
+        read_only_fields = fields

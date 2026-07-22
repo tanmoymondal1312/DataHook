@@ -2,14 +2,20 @@
 
 import csv
 import json
+from datetime import timedelta
 
 from django.db.models import Count, TextField
-from django.db.models.functions import Cast
+from django.db.models.functions import Cast, TruncDate
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
+from rest_framework.generics import (
+    ListAPIView,
+    ListCreateAPIView,
+    RetrieveUpdateDestroyAPIView,
+)
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -17,6 +23,7 @@ from rest_framework.views import APIView
 from .models import Attribute, Endpoint, Submission
 from .pagination import SubmissionPagination
 from .serializers import (
+    AggregateSubmissionSerializer,
     AttributeSerializer,
     EndpointDetailSerializer,
     EndpointListSerializer,
@@ -140,6 +147,78 @@ class SubmissionDetailView(_EndpointScopedMixin, APIView):
         submission = get_object_or_404(endpoint.submissions, pk=pk)
         submission.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AllSubmissionsView(ListAPIView):
+    """Cross-endpoint feed: every submission across the user's own endpoints.
+
+    Newest first, searchable across the JSON payload, paginated (page size 20).
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = AggregateSubmissionSerializer
+    pagination_class = SubmissionPagination
+
+    def get_queryset(self):
+        qs = Submission.objects.filter(
+            endpoint__owner=self.request.user
+        ).select_related("endpoint")
+
+        search = self.request.query_params.get("search", "").strip()
+        if search:
+            qs = qs.annotate(
+                _data_text=Cast("data", output_field=TextField())
+            ).filter(_data_text__icontains=search)
+
+        return qs.order_by("-created_at")
+
+
+class EndpointStatsView(_EndpointScopedMixin, APIView):
+    """Submission analytics for one endpoint (owner-only).
+
+    Returns totals plus a 30-day daily series with zero-filled gaps so the
+    client can draw a continuous chart.
+    """
+
+    DAILY_WINDOW = 30
+
+    def get(self, request, endpoint_pk=None):
+        endpoint = self.get_endpoint()
+        submissions = endpoint.submissions
+
+        # Date math uses the active timezone (settings.TIME_ZONE) consistently
+        # for localdate(), the __date lookups and TruncDate below.
+        today = timezone.localdate()
+        window_start = today - timedelta(days=self.DAILY_WINDOW - 1)
+
+        total = submissions.count()
+        today_count = submissions.filter(created_at__date=today).count()
+        last_7_days = submissions.filter(
+            created_at__date__gte=today - timedelta(days=6)
+        ).count()
+
+        # One grouped query for the daily counts within the window.
+        rows = (
+            submissions.filter(created_at__date__gte=window_start)
+            .annotate(day=TruncDate("created_at"))
+            .values("day")
+            .annotate(count=Count("id"))
+        )
+        counts = {row["day"]: row["count"] for row in rows}
+
+        daily = []
+        for offset in range(self.DAILY_WINDOW):
+            day = window_start + timedelta(days=offset)
+            daily.append({"date": day.isoformat(), "count": counts.get(day, 0)})
+
+        return Response(
+            {
+                "total": total,
+                "today": today_count,
+                "last_7_days": last_7_days,
+                "daily": daily,
+            }
+        )
 
 
 class ExportView(_EndpointScopedMixin, APIView):

@@ -188,6 +188,83 @@ class EndpointApiTests(APITestCase):
         self.assertIn("name", csv.content.decode())
 
 
+class AggregateAndStatsTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="agg@example.com", password="pw12345678", name="Agg"
+        )
+        self.other = User.objects.create_user(
+            email="stranger@example.com", password="pw12345678", name="Stranger"
+        )
+        self.ep1 = Endpoint.objects.create(owner=self.user, name="Alpha")
+        self.ep2 = Endpoint.objects.create(owner=self.user, name="Beta")
+        self.foreign = Endpoint.objects.create(owner=self.other, name="Foreign")
+
+        self.s1 = Submission.objects.create(endpoint=self.ep1, data={"name": "Ann"})
+        self.s2 = Submission.objects.create(endpoint=self.ep2, data={"name": "Bob"})
+        # A submission belonging to another user — must never leak.
+        Submission.objects.create(endpoint=self.foreign, data={"name": "Zed"})
+
+    def auth(self, user):
+        r = self.client.post(
+            reverse("login"),
+            {"email": user.email, "password": "pw12345678"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
+
+    def test_aggregate_lists_only_own_submissions(self):
+        self.auth(self.user)
+        r = self.client.get(reverse("all-submissions"))
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(set(body), {"count", "next", "previous", "results"})
+        self.assertEqual(body["count"], 2)  # not the foreign one
+        item = body["results"][0]
+        self.assertEqual(
+            set(item), {"id", "endpoint_id", "endpoint_name", "data", "created_at"}
+        )
+        # Newest first (s2 created after s1).
+        self.assertEqual(body["results"][0]["id"], self.s2.id)
+        names = {row["endpoint_name"] for row in body["results"]}
+        self.assertEqual(names, {"Alpha", "Beta"})
+
+    def test_aggregate_search(self):
+        self.auth(self.user)
+        r = self.client.get(reverse("all-submissions"), {"search": "ANN"})
+        self.assertEqual(r.json()["count"], 1)
+        self.assertEqual(r.json()["results"][0]["endpoint_name"], "Alpha")
+
+    def test_aggregate_requires_auth(self):
+        r = self.client.get(reverse("all-submissions"))
+        self.assertEqual(r.status_code, 401)
+
+    def test_stats_shape_and_zero_fill(self):
+        # Add a couple more submissions to ep1 for a non-trivial total.
+        Submission.objects.create(endpoint=self.ep1, data={"name": "C"})
+        self.auth(self.user)
+        r = self.client.get(reverse("endpoint-stats", kwargs={"endpoint_pk": self.ep1.pk}))
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(set(body), {"total", "today", "last_7_days", "daily"})
+        self.assertEqual(body["total"], 2)  # ep1 has s1 + C
+        self.assertEqual(body["today"], 2)  # both created now
+        self.assertEqual(body["last_7_days"], 2)
+        # 30 gap-free days, each a {date, count}, chronological, last day = today.
+        self.assertEqual(len(body["daily"]), 30)
+        for point in body["daily"]:
+            self.assertEqual(set(point), {"date", "count"})
+        self.assertEqual(body["daily"][-1]["count"], 2)
+        self.assertEqual(body["daily"][0]["count"], 0)  # 29 days ago: empty
+        dates = [p["date"] for p in body["daily"]]
+        self.assertEqual(dates, sorted(dates))
+
+    def test_stats_owner_only(self):
+        self.auth(self.other)
+        r = self.client.get(reverse("endpoint-stats", kwargs={"endpoint_pk": self.ep1.pk}))
+        self.assertEqual(r.status_code, 404)
+
+
 class AuthTests(APITestCase):
     def test_register_login_me(self):
         reg = self.client.post(
