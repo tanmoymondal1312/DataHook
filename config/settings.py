@@ -11,8 +11,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 import os
+import sys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Throttle counters live in a process-wide cache, so under `manage.py test`
+# they leak between test cases and 429 unrelated ones once the suite grows.
+# Rate limiting is therefore switched off while testing (see REST_FRAMEWORK).
+TESTING = "test" in sys.argv
 
 # Load environment variables from a .env file at the project root, if present.
 load_dotenv(BASE_DIR / ".env")
@@ -178,9 +184,9 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_THROTTLE_RATES": {
         # Public ingest endpoint — throttled per client IP.
-        "ingest": os.getenv("INGEST_THROTTLE_RATE", "60/minute"),
+        "ingest": None if TESTING else os.getenv("INGEST_THROTTLE_RATE", "60/minute"),
         # Registration/login — light protection against abuse.
-        "auth": os.getenv("AUTH_THROTTLE_RATE", "20/minute"),
+        "auth": None if TESTING else os.getenv("AUTH_THROTTLE_RATE", "20/minute"),
     },
     "EXCEPTION_HANDLER": "config.exceptions.custom_exception_handler",
 }
@@ -223,6 +229,16 @@ CORS_URLS_REGEX = r"^/api/.*$"
 # Path to the service-account JSON. When unset, push notifications are disabled
 # gracefully (the rest of the API keeps working).
 FIREBASE_CREDENTIALS = os.getenv("FIREBASE_CREDENTIALS", "")
+
+
+# --------------------------------------------------------------------------- #
+# Google Sign-In
+# --------------------------------------------------------------------------- #
+# The OAuth **Web** client ID of the Firebase project (client_type 3 in the
+# app's google-services.json). The Android client requests an ID token with
+# this as its audience, and `/api/auth/google/` verifies it against this value.
+# Leave blank to disable Google sign-in (the endpoint then returns 400).
+GOOGLE_WEB_CLIENT_ID = os.getenv("GOOGLE_WEB_CLIENT_ID", "")
 
 
 # --------------------------------------------------------------------------- #

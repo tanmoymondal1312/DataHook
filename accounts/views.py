@@ -10,6 +10,7 @@ from rest_framework_simplejwt.views import TokenRefreshView  # noqa: F401 (re-ex
 from .models import Device
 from .serializers import (
     DeviceSerializer,
+    GoogleAuthSerializer,
     LoginSerializer,
     RegisterSerializer,
     UserSerializer,
@@ -42,6 +43,27 @@ class LoginView(APIView):
         return Response(
             {"user": UserSerializer(user).data, **tokens_for(user)},
             status=status.HTTP_200_OK,
+        )
+
+
+class GoogleAuthView(APIView):
+    """Sign in (or sign up) with a Google ID token.
+
+    Returns the same envelope as login/register plus ``created``, so the client
+    can tell a brand-new account from an existing one.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_scope = "auth"
+
+    def post(self, request):
+        serializer = GoogleAuthSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data["user"]
+        created = serializer.validated_data["created"]
+        return Response(
+            {"user": UserSerializer(user).data, "created": created, **tokens_for(user)},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
 

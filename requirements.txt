@@ -6,6 +6,9 @@ django-cors-headers==4.9.0
 django-filter==25.1
 python-dotenv==1.2.2
 firebase-admin==7.5.0
+# Verifies Google Sign-In ID tokens in /api/auth/google/. Already pulled in by
+# firebase-admin, but pinned here because we now import it directly.
+google-auth==2.56.0
 
 # Production server (choose one at deploy time)
 gunicorn==26.0.0
