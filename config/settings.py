@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     # Local
     "accounts",
     "endpoints",
+    "appupdate",
 ]
 
 MIDDLEWARE = [

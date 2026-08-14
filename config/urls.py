@@ -20,6 +20,7 @@ urlpatterns = [
     path("privacy/", PrivacyPolicyView.as_view(), name="privacy-policy"),
     path("api/", include("accounts.urls")),
     path("api/", include("endpoints.urls")),
+    path("api/", include("appupdate.urls")),
     # Public ingest — deliberately outside /api/ and JWT-free.
     path("ingest/<slug:slug>/", IngestView.as_view(), name="ingest"),
 ]
