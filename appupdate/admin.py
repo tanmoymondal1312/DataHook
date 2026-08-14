@@ -22,15 +22,18 @@ class AppUpdateConfigAdmin(admin.ModelAdmin):
                     "mode",
                     "current_version",
                     "new_version",
+                    "new_version_code",
                     "message",
                     "play_store_url",
                 ],
                 "description": (
                     "Only one configuration exists (it replaces the previous "
                     "one when saved). mode 0 = no update, 1 = optional, "
-                    "2 = mandatory. The version fields are display-only text "
-                    "(e.g. 2.4 / 3.89); the prompt itself is driven by "
-                    "enabled + mode alone."
+                    "2 = mandatory. Version text fields are display-only; the "
+                    "prompt is gated by enabled + mode + new_version_code: "
+                    "users whose installed versionCode is below new_version_code "
+                    "are prompted, everyone else never sees it — so users who "
+                    "already updated stop being prompted automatically."
                 ),
             },
         ),

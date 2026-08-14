@@ -4,8 +4,18 @@ A single-row table (always pk=1) that the Android app polls via
 `GET /api/app-update/`. It is edited from the Django admin only, so the app's
 update behaviour can be changed at runtime without shipping a new APK.
 
-The decision is driven purely by `enabled` + `mode`; the version fields are
-free-text (e.g. "2.4", "3.89") and informational/display only.
+The prompt is gated by `enabled` + `mode` + the installed versionCode:
+
+  * The Android app reports its own installed versionCode (the build
+    number, e.g. 3) and compares it against `new_version_code`.
+  * Installed >= new_version_code → the app is already on (or past) the
+    target release → never prompted. This is what stops users who just
+    updated from seeing the dialog again.
+  * Installed < new_version_code → prompted only when `enabled` is on:
+    mode 1 = optional, mode 2 = mandatory.
+
+`current_version` / `new_version` are free-text (e.g. "2.4", "3.89") and
+informational/display only.
 """
 
 from django.db import models
@@ -47,6 +57,16 @@ class AppUpdateConfig(models.Model):
         help_text=(
             "Version this update points to (display only), e.g. 3.89. Shown "
             "in the app's update dialog when set."
+        ),
+    )
+    new_version_code = models.PositiveIntegerField(
+        default=0,
+        help_text=(
+            "The versionCode (build number) of the release this update points "
+            "to, e.g. 4. The app compares its own installed versionCode "
+            "against this: lower → prompt, equal or higher → never prompt "
+            "(users who already updated see nothing). Bump this every time "
+            "you publish a release. 0 = never prompt (safe default)."
         ),
     )
     message = models.TextField(

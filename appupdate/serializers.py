@@ -18,6 +18,7 @@ class AppUpdateConfigSerializer(serializers.ModelSerializer):
             "mode",
             "current_version",
             "new_version",
+            "new_version_code",
             "message",
             "play_store_url",
         ]
