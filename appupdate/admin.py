@@ -6,6 +6,7 @@ invalid combination (e.g. minimum > latest) cannot be saved.
 """
 
 from django.contrib import admin
+from django.urls import reverse
 
 from .models import AppUpdateConfig
 
@@ -19,22 +20,28 @@ class AppUpdateConfigAdmin(admin.ModelAdmin):
                 "fields": [
                     "enabled",
                     "mode",
-                    "latest_version",
-                    "minimum_version",
+                    "current_version",
+                    "new_version",
                     "message",
                     "play_store_url",
                 ],
                 "description": (
                     "Only one configuration exists (it replaces the previous "
                     "one when saved). mode 0 = no update, 1 = optional, "
-                    "2 = mandatory."
+                    "2 = mandatory. The version fields are display-only text "
+                    "(e.g. 2.4 / 3.89); the prompt itself is driven by "
+                    "enabled + mode alone."
                 ),
             },
         ),
         ("Audit", {"fields": ["updated_at"]}),
     ]
     readonly_fields = ["updated_at"]
-    list_display = ["enabled", "mode", "latest_version", "minimum_version", "updated_at"]
+    list_display = ["enabled", "mode", "current_version", "new_version", "updated_at"]
+    # Don't link any column: the whole row is clickable instead (see the custom
+    # change_list template), so the Enabled/Disabled icon stays a pure status
+    # indicator rather than a link.
+    list_display_links = None
 
     def has_add_permission(self, request):
         # Singleton: there is always exactly one row (created on first read).
@@ -42,3 +49,13 @@ class AppUpdateConfigAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    def changelist_view(self, request, extra_context=None):
+        # Expose the deterministic change URL for the row-click script. Because
+        # this is a singleton, the target is always the same object.
+        extra_context = extra_context or {}
+        config = AppUpdateConfig.load()
+        extra_context["config_change_url"] = reverse(
+            "admin:appupdate_appupdateconfig_change", args=[config.pk]
+        )
+        return super().changelist_view(request, extra_context=extra_context)

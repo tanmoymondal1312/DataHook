@@ -16,8 +16,8 @@ class AppUpdateConfigSerializer(serializers.ModelSerializer):
         fields = [
             "enabled",
             "mode",
-            "latest_version",
-            "minimum_version",
+            "current_version",
+            "new_version",
             "message",
             "play_store_url",
         ]

@@ -1,0 +1,32 @@
+{% extends "admin/change_list.html" %}
+{% load i18n static %}
+
+{% block content %}
+  {{ block.super }}
+  <style>
+    /* Whole-row click affordance for the singleton config row. */
+    #result_list tbody tr {
+      cursor: pointer;
+    }
+    #result_list tbody tr:hover td {
+      background: var(--body-quiet-color, #f5f5f5);
+    }
+  </style>
+  {{ config_change_url|json_script:"config-change-url" }}
+  <script>
+    (function () {
+      var urlEl = document.getElementById("config-change-url");
+      if (!urlEl) return;
+      var url = JSON.parse(urlEl.textContent);
+
+      document.querySelectorAll("#result_list tbody tr").forEach(function (row) {
+        row.addEventListener("click", function (event) {
+          // Never hijack clicks on interactive elements (action checkboxes,
+          // sort links, form controls, etc.).
+          if (event.target.closest("a, button, input, select, label, textarea")) return;
+          window.location = url;
+        });
+      });
+    })();
+  </script>
+{% endblock %}

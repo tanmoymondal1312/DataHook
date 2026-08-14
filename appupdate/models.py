@@ -3,9 +3,11 @@
 A single-row table (always pk=1) that the Android app polls via
 `GET /api/app-update/`. It is edited from the Django admin only, so the app's
 update behaviour can be changed at runtime without shipping a new APK.
+
+The decision is driven purely by `enabled` + `mode`; the version fields are
+free-text (e.g. "2.4", "3.89") and informational/display only.
 """
 
-from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -29,18 +31,22 @@ class AppUpdateConfig(models.Model):
             "2 = mandatory (user must update to continue)."
         ),
     )
-    latest_version = models.PositiveIntegerField(
-        default=1,
+    current_version = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
         help_text=(
-            "Latest published versionCode. Optional mode prompts users with a "
-            "lower versionCode than this."
+            "Version currently live on the Play Store (display only), "
+            "e.g. 2.4."
         ),
     )
-    minimum_version = models.PositiveIntegerField(
-        default=1,
+    new_version = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
         help_text=(
-            "Minimum supported versionCode. Mandatory mode blocks users below "
-            "this version."
+            "Version this update points to (display only), e.g. 3.89. Shown "
+            "in the app's update dialog when set."
         ),
     )
     message = models.TextField(
@@ -60,29 +66,9 @@ class AppUpdateConfig(models.Model):
     )
     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
-        constraints = [
-            models.CheckConstraint(
-                check=models.Q(latest_version__gte=models.F("minimum_version")),
-                name="latest_version_gte_minimum_version",
-            ),
-        ]
-
     def __str__(self):
         mode = dict(self.Mode.choices).get(self.mode, self.mode)
         return f"App update ({mode}, enabled={self.enabled})"
-
-    def clean(self):
-        super().clean()
-        if self.latest_version < self.minimum_version:
-            raise ValidationError(
-                {
-                    "latest_version": (
-                        "Latest version must be greater than or equal to the "
-                        "minimum version."
-                    )
-                }
-            )
 
     @classmethod
     def load(cls) -> "AppUpdateConfig":
