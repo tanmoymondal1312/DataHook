@@ -62,7 +62,7 @@ class AppUpdateApiTests(APITestCase):
             set(body),
             {
                 "enabled", "mode", "current_version", "new_version",
-                "message", "play_store_url",
+                "new_version_code", "message", "play_store_url",
             },
         )
 
@@ -82,6 +82,7 @@ class AppUpdateApiTests(APITestCase):
         self.assertEqual(body["mode"], 1)
         self.assertEqual(body["current_version"], "2.4")
         self.assertEqual(body["new_version"], "3.89")
+        self.assertEqual(body["new_version_code"], 4)
         self.assertEqual(body["message"], "Please update!")
         self.assertIn("play.google.com", body["play_store_url"])
 
@@ -92,6 +93,18 @@ class AppUpdateApiTests(APITestCase):
         config.new_version = "3.89 beta"
         config.full_clean()  # must not raise
         config.save()
+
+    def test_new_version_code_round_trips(self):
+        """The versionCode gate value must survive save + reload."""
+        config = AppUpdateConfig.load()
+        config.new_version_code = 7
+        config.save()
+        self.assertEqual(AppUpdateConfig.load().new_version_code, 7)
+
+    def test_negative_new_version_code_rejected(self):
+        """versionCodes are build numbers — negatives are never valid."""
+        with self.assertRaises(ValidationError):
+            AppUpdateConfig(pk=1, new_version_code=-1).full_clean()
 
     def test_single_row_never_recreated(self):
         AppUpdateConfig.load()
