@@ -72,6 +72,7 @@ class AppUpdateApiTests(APITestCase):
         config.mode = 1
         config.current_version = "2.4"
         config.new_version = "3.89"
+        config.new_version_code = 4
         config.message = "Please update!"
         config.play_store_url = (
             "https://play.google.com/store/apps/details?id=com.mediaghor.datahook"
